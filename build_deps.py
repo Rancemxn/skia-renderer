@@ -192,9 +192,9 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict,
     gn_args.append('cxx="clang++"')
     
     if is_windows:
-        extra_flags = ['"/GR"', '"/EHsc"']
+        extra_flags = '["/GR", "/EHsc"]'
     else:
-        extra_flags = ['"-frtti"', '"-fexceptions"']
+        extra_flags = '["-frtti", "-fexceptions"]'
     gn_args.append(f'extra_cflags_cc={extra_flags}')
     
     # Standard Skia args
