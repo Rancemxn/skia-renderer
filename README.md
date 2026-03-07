@@ -10,28 +10,13 @@ A high-performance 2D rendering application using **SDL3**, **Skia Graphite**, *
 - 🔧 vk-bootstrap for easy Vulkan initialization
 - 💾 VMA (Vulkan Memory Allocator) for efficient memory management
 - 📦 C++20 with clean architecture
-- 🛠️ Flexible build scripts with extensive customization options
+- 🛠️ Cross-platform Python build scripts
 
 ## Quick Start
 
-### Windows (One-Click Build)
-
-```cmd
-REM Prerequisites: VS2022, CMake, aria2, Git
-build_all.bat
-```
-
-### Step-by-Step
-
-```cmd
-REM 1. Download dependencies
-sync_deps.bat
-
-REM 2. Build dependencies  
-build_deps.bat
-
-REM 3. Build main project
-build_windows.bat
+```bash
+# One-click build
+python build_all.py --llvm
 ```
 
 See [QUICKSTART.md](QUICKSTART.md) for detailed options.
@@ -40,59 +25,70 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed options.
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Visual Studio | 2022+ | With C++ development workload |
 | CMake | 3.20+ | Build system |
+| Python | 3.8+ | Build scripts |
 | Vulkan SDK | 1.3+ | Graphics API |
 | Git | Latest | For cloning repos |
 | aria2 | Latest | Fast parallel downloads |
-| Python | 3.8+ | For Skia build |
+| 7-Zip | Latest | Archive extraction |
+
+**Compiler (choose one):**
+- LLVM/Clang + Ninja (recommended)
+- Visual Studio 2022 (Windows)
+- GCC/Clang (Linux/macOS)
 
 ## Build Scripts
 
 | Script | Description |
 |--------|-------------|
-| `build_all.bat` | One-click complete build |
-| `sync_deps.bat` | Download all dependencies with aria2 |
-| `build_deps.bat` | Build SDL3, vk-bootstrap, VMA, Skia |
-| `build_windows.bat` | Build main project |
-| `build_unix.sh` | Build script for Linux/macOS |
+| `build_all.py` | One-click complete build |
+| `sync_deps.py` | Download all dependencies |
+| `build_deps.py` | Build SDL3, vk-bootstrap, Skia |
+| `build_windows.py` | Build main project |
 
-## Customizing Builds
+## Usage
 
-### Skia Options
-
-```cmd
-REM Enable Skia tools for debugging
-build_deps.bat --skia-enable-tools true
-
-REM Use LLVM Clang compiler
-build_deps.bat --skia-clang-win "C:/Program Files/LLVM"
-
-REM Build for ARM64
-build_deps.bat --skia-target-cpu arm64
-
-REM Full custom args
-cd deps\skia
-bin\gn gen out/Release --args="target_cpu=\"x64\" clang_win=\"C:/Program Files/LLVM\" is_official_build=true skia_enable_graphite=true skia_use_vulkan=true"
+### Download Dependencies
+```bash
+python sync_deps.py --mirror --skip-skia-deps
 ```
 
-### SDL3 Options
-
-```cmd
-build_deps.bat --sdl-vulkan ON --sdl-opengl ON
+### Build Dependencies
+```bash
+python build_deps.py --llvm --skia-tools
 ```
 
-### Main Project Options
+### Build Main Project
+```bash
+python build_windows.py --llvm
+```
 
-```cmd
-REM Debug build
-build_windows.bat --build-type Debug
+## Options
 
-REM Clean rebuild
-build_windows.bat --clean
+### sync_deps.py
+```
+--mirror           Use Chinese mirrors
+--proxy URL        Use proxy for downloads
+--skip-skia-deps   Skip Skia dependencies
+--keep-downloads   Keep downloaded archives
+```
 
-REM Custom paths
-build_windows.bat --vulkan-sdk "C:\VulkanSDK\1.3.290.0" --skia-path "C:\libs\skia"
+### build_deps.py
+```
+--llvm             Use LLVM/Clang + Ninja
+--vs               Use Visual Studio
+--build-type TYPE  Release or Debug
+--skia-tools       Build Skia tools
+--clean            Clean before building
+```
+
+### build_windows.py
+```
+--llvm             Use LLVM/Clang + Ninja
+--vs               Use Visual Studio
+--build-type TYPE  Release or Debug
+--vulkan-sdk PATH  Vulkan SDK path
+--clean            Clean before building
 ```
 
 ## Project Structure
@@ -102,69 +98,32 @@ skia-renderer/
 ├── src/
 │   ├── main.cpp                 # Entry point
 │   ├── core/
-│   │   ├── Application.h/cpp    # Main application class
+│   │   └── Application.h/cpp    # Main application
 │   └── renderer/
-│       ├── VulkanContext.h/cpp  # Vulkan initialization (vk-bootstrap)
+│       ├── VulkanContext.h/cpp  # Vulkan (vk-bootstrap)
 │       ├── Swapchain.h/cpp      # Swapchain management
-│       └── SkiaRenderer.h/cpp   # Skia Graphite rendering
-├── deps/                        # Dependencies (downloaded)
-├── build_deps.bat               # Build dependencies
-├── sync_deps.bat                # Download dependencies
-├── build_windows.bat            # Build main project
-├── build_all.bat                # One-click build
-└── CMakeLists.txt               # CMake configuration
+│       └── SkiaRenderer.h/cpp   # Skia Graphite
+├── deps/                        # Dependencies
+├── sync_deps.py                 # Download dependencies
+├── build_deps.py                # Build dependencies
+├── build_windows.py             # Build main project
+└── build_all.py                 # One-click build
 ```
-
-## Skia Build Arguments Reference
-
-Key Skia GN arguments used:
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `target_cpu` | x64 | Target architecture |
-| `is_official_build` | true | Optimized release build |
-| `skia_enable_graphite` | true | Enable Graphite backend |
-| `skia_enable_ganesh` | true | Enable Ganesh backend |
-| `skia_use_vulkan` | true | Vulkan support |
-| `skia_use_gl` | true | OpenGL support |
-| `skia_enable_tools` | false | Build Skia tools |
-| `skia_enable_pdf` | true | PDF support |
-| `skia_use_system_*` | false | Use system libraries |
 
 ## Running
 
-```cmd
-REM From build directory
-build\Release\skia-renderer.exe
+```bash
+# Windows
+build\skia-renderer.exe
 
-REM With custom window size
-build\Release\skia-renderer.exe --width 1920 --height 1080
+# Linux
+./build/skia-renderer
+
+# Custom window size
+build\skia-renderer.exe --width 1920 --height 1080
 ```
 
 Press **ESC** to exit.
-
-## Troubleshooting
-
-### "VULKAN_SDK not set"
-```cmd
-set VULKAN_SDK=C:\VulkanSDK\1.3.290.0
-```
-
-### "aria2c not found"
-```cmd
-winget install aria2
-```
-
-### "depot_tools not found"
-```cmd
-set DEPOT_TOOLS=C:\path\to\depot_tools
-set PATH=%DEPOT_TOOLS%;%PATH%
-```
-
-### CMake can't find dependencies
-```cmd
-build_windows.bat --sdl3-path "path\to\SDL3" --skia-path "path\to\skia"
-```
 
 ## Dependencies
 
@@ -173,7 +132,7 @@ build_windows.bat --sdl3-path "path\to\SDL3" --skia-path "path\to\skia"
 | SDL3 | 3.4.2+ | Zlib |
 | vk-bootstrap | 1.4.343+ | MIT |
 | VulkanMemoryAllocator | 3.3.0+ | MIT |
-| Skia | chrome/m146 | BSD-3-Clause |
+| Skia | Latest | BSD-3-Clause |
 
 ## License
 

@@ -1,0 +1,408 @@
+#!/usr/bin/env python3
+"""
+Skia Renderer - Build Dependencies
+Builds SDL3, vk-bootstrap, Skia with LLVM/Clang or Visual Studio
+"""
+
+import os
+import sys
+import shutil
+import subprocess
+import argparse
+import platform
+from pathlib import Path
+
+def find_tool(name: str, extra_paths: list = None) -> str:
+    """Find a tool in PATH or specified paths"""
+    result = shutil.which(name)
+    if result:
+        return result
+    
+    if extra_paths:
+        for path in extra_paths:
+            exe = Path(path) / name
+            if exe.exists():
+                return str(exe)
+            if platform.system() == "Windows":
+                exe = Path(path) / f"{name}.exe"
+                if exe.exists():
+                    return str(exe)
+    
+    return None
+
+def find_llvm() -> tuple:
+    """Find LLVM installation"""
+    # Check PATH first
+    clang = find_tool("clang")
+    if clang:
+        clang_path = Path(clang)
+        llvm_path = clang_path.parent.parent
+        clang_pp = find_tool("clang++", [str(clang_path.parent)])
+        return str(llvm_path), clang, clang_pp or str(clang_path.parent / "clang++")
+    
+    # Check common Windows paths
+    if platform.system() == "Windows":
+        for base in [r"C:\Program Files\LLVM", r"C:\LLVM"]:
+            llvm_path = Path(base)
+            if (llvm_path / "bin" / "clang.exe").exists():
+                return str(llvm_path), str(llvm_path / "bin" / "clang.exe"), str(llvm_path / "bin" / "clang++.exe")
+    
+    return None, None, None
+
+def find_ninja(depot_tools: Path = None) -> str:
+    """Find ninja executable"""
+    ninja = find_tool("ninja")
+    if ninja:
+        return ninja
+    
+    # Check depot_tools
+    if depot_tools and (depot_tools / "ninja.exe").exists():
+        return str(depot_tools / "ninja.exe")
+    
+    # Check LLVM bin
+    llvm_path, _, _ = find_llvm()
+    if llvm_path:
+        ninja_path = Path(llvm_path) / "bin" / "ninja.exe"
+        if ninja_path.exists():
+            return str(ninja_path)
+    
+    return None
+
+def find_visual_studio() -> str:
+    """Find Visual Studio generator"""
+    vs_paths = [
+        r"C:\Program Files\Microsoft Visual Studio\2022\Community",
+        r"C:\Program Files\Microsoft Visual Studio\2022\Professional",
+        r"C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
+    ]
+    
+    for p in vs_paths:
+        if Path(p).exists():
+            return "Visual Studio 17 2022"
+    
+    vs_paths_2019 = [
+        r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community",
+        r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional",
+    ]
+    
+    for p in vs_paths_2019:
+        if Path(p).exists():
+            return "Visual Studio 16 2019"
+    
+    return None
+
+def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) -> subprocess.CompletedProcess:
+    """Run a command"""
+    merged_env = os.environ.copy()
+    if env:
+        merged_env.update(env)
+    
+    print(f"  Running: {' '.join(str(c) for c in cmd)}")
+    result = subprocess.run(cmd, cwd=cwd, env=merged_env)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd)
+    return result
+
+def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
+                     generator: str, build_type: str, 
+                     llvm_path: str = None, clang: str = None, clang_pp: str = None,
+                     extra_args: list = None) -> bool:
+    """Build a project with CMake"""
+    
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+    build_dir.mkdir(parents=True)
+    
+    # CMake configure
+    cmd = ["cmake", "-S", str(source_dir), "-B", str(build_dir), "-G", generator]
+    
+    if generator == "Ninja":
+        cmd.extend(["-DCMAKE_BUILD_TYPE=" + build_type])
+    
+    # Set compilers for LLVM
+    if llvm_path and clang and clang_pp:
+        cmd.extend([
+            f"-DCMAKE_C_COMPILER={clang}",
+            f"-DCMAKE_CXX_COMPILER={clang_pp}",
+        ])
+    
+    cmd.extend([
+        f"-DCMAKE_INSTALL_PREFIX={install_dir}",
+    ])
+    
+    if extra_args:
+        cmd.extend(extra_args)
+    
+    print("  Configuring...")
+    run_cmd(cmd)
+    
+    # Build
+    print("  Building...")
+    build_cmd = ["cmake", "--build", str(build_dir), "--config", build_type]
+    run_cmd(build_cmd)
+    
+    # Install
+    print("  Installing...")
+    install_cmd = ["cmake", "--install", str(build_dir), "--config", build_type]
+    run_cmd(install_cmd)
+    
+    return True
+
+def build_skia(skia_dir: Path, build_type: str, skia_args: dict, depot_tools: Path) -> bool:
+    """Build Skia with gn + ninja"""
+    
+    # Add depot_tools to PATH
+    env = os.environ.copy()
+    env["PATH"] = str(depot_tools) + os.pathsep + env.get("PATH", "")
+    
+    # Check for gn
+    gn = find_tool("gn", [str(depot_tools)])
+    if not gn:
+        print("  ERROR: gn not found in depot_tools")
+        return False
+    
+    # Check for ninja
+    ninja = find_ninja(depot_tools)
+    if not ninja:
+        print("  ERROR: ninja not found")
+        return False
+    
+    # Build GN args
+    gn_args = []
+    gn_args.append(f'target_cpu="{skia_args.get("target_cpu", "x64")}"')
+    
+    if skia_args.get("clang_win"):
+        gn_args.append(f'clang_win="{skia_args["clang_win"]}"')
+        gn_args.append('cc="clang"')
+        gn_args.append('cxx="clang++"')
+        gn_args.append('extra_cflags_cc=["-frtti", "-fexceptions"]')
+    else:
+        gn_args.append('extra_cflags_cc=["/GR", "/EHsc"]')
+    
+    # Standard Skia args
+    bool_args = [
+        ("is_official_build", True),
+        ("is_debug", False),
+        ("skia_enable_ganesh", True),
+        ("skia_enable_graphite", True),
+        ("skia_use_vulkan", True),
+        ("skia_use_gl", True),
+        ("skia_use_system_expat", False),
+        ("skia_use_system_harfbuzz", False),
+        ("skia_use_system_icu", False),
+        ("skia_use_system_libjpeg_turbo", False),
+        ("skia_use_system_libpng", False),
+        ("skia_use_system_freetype2", False),
+        ("skia_use_system_libwebp", False),
+        ("skia_use_system_zlib", False),
+        ("skia_enable_tools", False),
+        ("skia_enable_pdf", True),
+        ("skia_use_angle", False),
+    ]
+    
+    for name, default in bool_args:
+        value = skia_args.get(name, default)
+        gn_args.append(f'{name}={"true" if value else "false"}')
+    
+    gn_args_str = " ".join(gn_args)
+    
+    print(f"  GN args: {gn_args_str}")
+    
+    out_dir = skia_dir / "out" / build_type
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
+    
+    # Generate
+    print("  Generating...")
+    run_cmd([gn, "gen", f"out/{build_type}", f"--args={gn_args_str}"], cwd=str(skia_dir), env=env)
+    
+    # Build
+    print("  Building...")
+    run_cmd([ninja, "-C", f"out/{build_type}"], cwd=str(skia_dir), env=env)
+    
+    return True
+
+def build_deps(args):
+    """Main build function"""
+    script_dir = Path(__file__).parent.resolve()
+    deps_dir = script_dir / "deps"
+    build_dir = script_dir / "build_deps"
+    install_dir = deps_dir / "installed"
+    
+    print("=" * 50)
+    print("Skia Renderer - Building Dependencies")
+    print("=" * 50)
+    print()
+    
+    # Detect tools
+    print("[Detecting Build Tools]")
+    
+    cmake = find_tool("cmake")
+    if not cmake:
+        print("  ERROR: CMake not found")
+        return 1
+    print(f"  [OK] CMake: {cmake}")
+    
+    # Find LLVM
+    llvm_path, clang, clang_pp = find_llvm()
+    if llvm_path:
+        print(f"  [OK] LLVM: {llvm_path}")
+    
+    # Find depot_tools for ninja
+    depot_tools = deps_dir / "depot_tools"
+    
+    # Determine generator
+    use_llvm = args.llvm or (llvm_path is not None and not args.vs)
+    
+    if use_llvm:
+        ninja = find_ninja(depot_tools)
+        if ninja:
+            print(f"  [OK] Ninja: {ninja}")
+            generator = "Ninja"
+        else:
+            print("  WARNING: Ninja not found, trying Visual Studio")
+            use_llvm = False
+    
+    if not use_llvm:
+        vs_gen = find_visual_studio()
+        if vs_gen:
+            print(f"  [OK] Visual Studio: {vs_gen}")
+            generator = vs_gen
+        else:
+            print("  ERROR: No suitable compiler found")
+            print("  Install LLVM with Ninja or Visual Studio")
+            return 1
+    
+    print()
+    
+    build_type = args.build_type
+    install_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Build SDL3
+    if not args.skip_sdl:
+        print("=" * 50)
+        print("[1/3] SDL3")
+        print("=" * 50)
+        
+        sdl_dir = deps_dir / "SDL3"
+        if not sdl_dir.exists():
+            print("  ERROR: SDL3 not found. Run sync_deps.py first.")
+        elif not (sdl_dir / "CMakeLists.txt").exists():
+            print("  SDL3 is prebuilt, skipping build")
+        else:
+            sdl_build = build_dir / "SDL3"
+            try:
+                build_with_cmake(
+                    sdl_dir, sdl_build, install_dir, generator, build_type,
+                    llvm_path, clang, clang_pp,
+                    ["-DSDL_VULKAN=ON", "-DSDL_OPENGL=ON", "-DSDL_TEST=OFF", "-DSDL_TESTS=OFF"]
+                )
+                print("  [OK] SDL3")
+            except Exception as e:
+                print(f"  ERROR: {e}")
+        print()
+    
+    # Build vk-bootstrap
+    if not args.skip_vkbootstrap:
+        print("=" * 50)
+        print("[2/3] vk-bootstrap")
+        print("=" * 50)
+        
+        vkb_dir = deps_dir / "vk-bootstrap"
+        if not vkb_dir.exists():
+            print("  ERROR: vk-bootstrap not found. Run sync_deps.py first.")
+        else:
+            vkb_build = build_dir / "vk-bootstrap"
+            try:
+                build_with_cmake(
+                    vkb_dir, vkb_build, install_dir, generator, build_type,
+                    llvm_path, clang, clang_pp
+                )
+                print("  [OK] vk-bootstrap")
+            except Exception as e:
+                print(f"  ERROR: {e}")
+        print()
+    
+    # Build Skia
+    if not args.skip_skia:
+        print("=" * 50)
+        print("[3/3] Skia")
+        print("=" * 50)
+        
+        skia_dir = deps_dir / "skia"
+        if not skia_dir.exists():
+            print("  ERROR: Skia not found. Run sync_deps.py first.")
+        else:
+            skia_args = {
+                "target_cpu": args.target_cpu,
+                "clang_win": llvm_path if use_llvm else None,
+                "is_official_build": args.build_type == "Release",
+                "is_debug": args.build_type == "Debug",
+                "skia_enable_tools": args.skia_tools,
+                "skia_enable_graphite": args.skia_graphite,
+                "skia_use_vulkan": args.skia_vulkan,
+            }
+            
+            try:
+                build_skia(skia_dir, build_type, skia_args, depot_tools)
+                print("  [OK] Skia")
+            except Exception as e:
+                print(f"  ERROR: {e}")
+        print()
+    
+    # Summary
+    print("=" * 50)
+    print("Dependency Build Complete!")
+    print("=" * 50)
+    print()
+    
+    libs = [
+        (install_dir / "lib" / "SDL3.lib", "SDL3.lib"),
+        (install_dir / "lib" / "SDL3d.lib", "SDL3d.lib (Debug)"),
+        (install_dir / "lib" / "vk-bootstrap.lib", "vk-bootstrap.lib"),
+        (deps_dir / "skia" / "out" / build_type / "skia.lib", "skia.lib"),
+    ]
+    
+    print("Built libraries:")
+    for path, name in libs:
+        if path.exists():
+            print(f"  [OK] {name}")
+    print()
+    print("Next: Run build_windows.py --llvm to build the main project")
+    print()
+    
+    return 0
+
+def main():
+    parser = argparse.ArgumentParser(description="Build dependencies for Skia Renderer")
+    
+    # Build options
+    parser.add_argument("--build-type", default="Release", choices=["Release", "Debug"],
+                       help="Build type (default: Release)")
+    parser.add_argument("--target-cpu", default="x64", help="Target CPU (default: x64)")
+    
+    # Compiler options
+    parser.add_argument("--llvm", action="store_true", help="Use LLVM/Clang + Ninja")
+    parser.add_argument("--vs", action="store_true", help="Use Visual Studio")
+    
+    # Skia options
+    parser.add_argument("--skia-tools", action="store_true", help="Build Skia tools")
+    parser.add_argument("--skia-graphite", action="store_true", default=True, help="Enable Graphite")
+    parser.add_argument("--skia-vulkan", action="store_true", default=True, help="Enable Vulkan")
+    
+    # Skip options
+    parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
+    parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
+    parser.add_argument("--skip-skia", action="store_true", help="Skip Skia")
+    
+    args = parser.parse_args()
+    
+    try:
+        return build_deps(args)
+    except Exception as e:
+        print(f"\nERROR: {e}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
