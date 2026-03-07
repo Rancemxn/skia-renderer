@@ -10,8 +10,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ========================================
 option(USE_SYSTEM_SDL "Use system SDL3" OFF)
 option(USE_SYSTEM_VK_BOOTSTRAP "Use system vk-bootstrap" OFF)
-option(USE_SYSTEM_VMA "Use system VulkanMemoryAllocator" OFF)
 option(USE_SYSTEM_SKIA "Use system Skia" OFF)
+# Note: VMA is managed internally by Skia
 
 # ========================================
 # Detect build environment
@@ -122,32 +122,11 @@ message(STATUS "vk-bootstrap Include: ${VK_BOOTSTRAP_INCLUDE_DIR}")
 message(STATUS "vk-bootstrap Library: ${VK_BOOTSTRAP_LIBRARY}")
 
 # ========================================
-# VMA (Vulkan Memory Allocator) - header only
-# ========================================
-if(USE_SYSTEM_VMA)
-    find_path(VMA_INCLUDE_DIR NAMES vk_mem_alloc.h)
-else()
-    if(DEFINED VMA_DIR)
-        find_path(VMA_INCLUDE_DIR NAMES vk_mem_alloc.h HINTS "${VMA_DIR}/include")
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/VulkanMemoryAllocator")
-        find_path(VMA_INCLUDE_DIR NAMES vk_mem_alloc.h HINTS "${CMAKE_SOURCE_DIR}/deps/VulkanMemoryAllocator/include")
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/installed")
-        find_path(VMA_INCLUDE_DIR NAMES vk_mem_alloc.h HINTS "${CMAKE_SOURCE_DIR}/deps/installed/include")
-    else()
-        find_path(VMA_INCLUDE_DIR NAMES vk_mem_alloc.h)
-    endif()
-endif()
-message(STATUS "VMA Include: ${VMA_INCLUDE_DIR}")
-
-if(NOT VMA_INCLUDE_DIR)
-    message(WARNING "VulkanMemoryAllocator not found. Please download to deps/VulkanMemoryAllocator/")
-endif()
-
-# ========================================
 # Skia
 # ========================================
 # Skia's header structure: headers are directly in root (e.g., skia/core/SkSurface.h)
 # not in skia/include/core/ like typical projects
+# Note: VMA is now managed internally by Skia, no need to link separately
 if(USE_SYSTEM_SKIA)
     find_path(SKIA_INCLUDE_DIR NAMES core/SkSurface.h)
     find_library(SKIA_LIBRARY NAMES skia)
@@ -206,7 +185,6 @@ add_executable(${PROJECT_NAME}
     src/renderer/VulkanContext.cpp
     src/renderer/SkiaRenderer.cpp
     src/renderer/Swapchain.cpp
-    src/renderer/VulkanAllocator.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -214,7 +192,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${Vulkan_INCLUDE_DIRS}
     ${SDL3_INCLUDE_DIRS}
     ${VK_BOOTSTRAP_INCLUDE_DIR}
-    ${VMA_INCLUDE_DIR}
     ${SKIA_INCLUDE_DIR}
 )
 
@@ -283,21 +260,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     )
     message(STATUS "Debug build: Vulkan validation enabled")
 endif()
-
-# ========================================
-# VMA (Vulkan Memory Allocator) Configuration
-# ========================================
-# VMA requires these macros to be defined BEFORE including vk_mem_alloc.h
-# These MUST match the Vulkan API version used at runtime
-# Vulkan 1.3 is required for Skia Graphite
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    VMA_VULKAN_VERSION=1003000
-    VMA_DEDICATED_ALLOCATION=1
-    VMA_BIND_MEMORY2=1
-    VMA_MEMORY_BUDGET=1
-    VMA_BUFFER_DEVICE_ADDRESS=1
-)
-message(STATUS "VMA configured for Vulkan 1.3")
 
 # ========================================
 # Compiler Flags
