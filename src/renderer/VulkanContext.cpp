@@ -131,7 +131,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     // Set Vulkan 1.3 as minimum required version for Skia Graphite
     auto instanceResult = builder
         .set_app_name("Skia Renderer")
-        .set_api_version(VK_API_VERSION_1_3)
+        .require_api_version(1, 3)
         .request_validation_layers()
         .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
         .enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)
@@ -140,7 +140,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     // Release build - no validation layers
     auto instanceResult = builder
         .set_app_name("Skia Renderer")
-        .set_api_version(VK_API_VERSION_1_3)
+        .require_api_version(1, 3)
         .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
         .build();
 #endif
