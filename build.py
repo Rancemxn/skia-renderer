@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Skia Renderer - Build Main Project
 Builds skia-renderer with LLVM/Clang + Ninja
@@ -178,7 +177,7 @@ def build_project(args):
         print(f"\nERROR: CMake configuration failed: {e}")
         print("\nTroubleshooting:")
         print("  1. Set VULKAN_SDK environment variable")
-        print("  2. Run sync_deps.py and build_deps.py first")
+        print("  2. Run sync.py and build_deps.py first")
         return 1
     
     # Build
