@@ -17,9 +17,6 @@ SDL3_VERSION = "3.4.2"
 VKBOOTSTRAP_VERSION = "1.4.343"
 VMA_VERSION = "3.3.0"
 
-# Mirror prefix for faster downloads in China
-MIRROR_PREFIX = "https://ghp.ci/"
-
 def find_tool(name: str, extra_paths: list = None) -> str:
     """Find a tool in PATH or specified paths"""
     result = shutil.which(name)
@@ -58,14 +55,12 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
     return result
 
 def download_with_aria2(url: str, output_dir: Path, filename: str, 
-                        proxy: str = None, mirror: bool = False) -> Path:
+                        proxy: str = None) -> Path:
     """Download a file using aria2c"""
     aria2 = find_tool("aria2c")
     if not aria2:
         raise RuntimeError("aria2c not found. Install: winget install aria2")
     
-    # Apply mirror if requested
-    dl_url = f"{MIRROR_PREFIX}{url}" if mirror else url
     output_path = output_dir / filename
     
     cmd = [
@@ -76,7 +71,7 @@ def download_with_aria2(url: str, output_dir: Path, filename: str,
         "--auto-file-renaming=false",
         "-d", str(output_dir),
         "-o", filename,
-        dl_url
+        url
     ]
     
     if proxy:
@@ -201,13 +196,10 @@ def sync_deps(args):
             if sdl_dir.exists():
                 shutil.rmtree(sdl_dir)
             
-            if args.sdl_prebuilt:
-                url = f"https://github.com/libsdl-org/SDL/releases/download/release-{SDL3_VERSION}/SDL3-devel-{SDL3_VERSION}-VC.zip"
-            else:
-                url = f"https://github.com/libsdl-org/SDL/archive/refs/tags/release-{SDL3_VERSION}.zip"
+            url = f"https://github.com/libsdl-org/SDL/archive/refs/tags/release-{SDL3_VERSION}.zip"
             
             archive = download_with_aria2(url, downloads_dir, f"SDL3-{SDL3_VERSION}.zip",
-                                         proxy=args.proxy, mirror=args.mirror)
+                                         proxy=args.proxy)
             extract_with_7z(archive, sdl_dir)
             print("  [OK] SDL3")
         print()
@@ -228,7 +220,7 @@ def sync_deps(args):
             
             url = f"https://github.com/charles-lunarg/vk-bootstrap/archive/refs/tags/v{VKBOOTSTRAP_VERSION}.zip"
             archive = download_with_aria2(url, downloads_dir, f"vk-bootstrap-{VKBOOTSTRAP_VERSION}.zip",
-                                         proxy=args.proxy, mirror=args.mirror)
+                                         proxy=args.proxy)
             extract_with_7z(archive, vkb_dir)
             print("  [OK] vk-bootstrap")
         print()
@@ -249,7 +241,7 @@ def sync_deps(args):
             
             url = f"https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v{VMA_VERSION}.zip"
             archive = download_with_aria2(url, downloads_dir, f"VMA-{VMA_VERSION}.zip",
-                                         proxy=args.proxy, mirror=args.mirror)
+                                         proxy=args.proxy)
             extract_with_7z(archive, vma_dir)
             print("  [OK] VulkanMemoryAllocator")
         print()
@@ -266,8 +258,6 @@ def sync_deps(args):
         # Clone depot_tools
         if not depot_dir.exists():
             depot_url = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
-            if args.mirror:
-                depot_url = f"{MIRROR_PREFIX}{depot_url}"
             git_clone(depot_url, depot_dir)
         else:
             print(f"  depot_tools already exists: {depot_dir}")
@@ -280,21 +270,18 @@ def sync_deps(args):
                 shutil.rmtree(skia_dir)
             
             skia_url = "https://skia.googlesource.com/skia.git"
-            if args.mirror:
-                skia_url = f"{MIRROR_PREFIX}{skia_url}"
             git_clone(skia_url, skia_dir)
         
         # Sync dependencies
-        if not args.skip_skia_deps:
-            print("  Syncing Skia dependencies...")
-            sync_script = skia_dir / "tools" / "git-sync-deps"
-            if sync_script.exists():
-                try:
-                    run_cmd([sys.executable, str(sync_script)], cwd=str(skia_dir), check=False)
-                except Exception as e:
-                    print(f"  Warning: Skia deps sync error: {e}")
-            else:
-                print("  Warning: git-sync-deps not found")
+        print("  Syncing Skia dependencies...")
+        sync_script = skia_dir / "tools" / "git-sync-deps"
+        if sync_script.exists():
+            try:
+                run_cmd([sys.executable, str(sync_script)], cwd=str(skia_dir), check=False)
+            except Exception as e:
+                print(f"  Warning: Skia deps sync error: {e}")
+        else:
+            print("  Warning: git-sync-deps not found")
         
         print("  [OK] Skia")
         print()
@@ -317,7 +304,7 @@ def sync_deps(args):
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
-    print("Next: Run build_deps.py --llvm to compile dependencies")
+    print("Next: python build_deps.py")
     print()
     
     return 0
@@ -330,12 +317,9 @@ def main():
     parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
     parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
     parser.add_argument("--skip-vma", action="store_true", help="Skip VulkanMemoryAllocator")
-    parser.add_argument("--skip-skia-deps", action="store_true", help="Skip Skia dependencies")
     parser.add_argument("--no-overwrite", action="store_true", help="Don't overwrite existing")
-    parser.add_argument("--sdl-prebuilt", action="store_true", help="Download prebuilt SDL3")
     
     # Download options
-    parser.add_argument("--mirror", action="store_true", help="Use Chinese mirrors")
     parser.add_argument("--proxy", type=str, help="Proxy URL")
     parser.add_argument("--keep-downloads", action="store_true", help="Keep downloaded archives")
     

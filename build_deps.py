@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Skia Renderer - Build Dependencies
-Builds SDL3, vk-bootstrap, Skia with LLVM/Clang or Visual Studio
+Builds SDL3, vk-bootstrap, Skia with LLVM/Clang + Ninja
 """
 
 import os
@@ -68,29 +68,6 @@ def find_ninja(depot_tools: Path = None) -> str:
     
     return None
 
-def find_visual_studio() -> str:
-    """Find Visual Studio generator"""
-    vs_paths = [
-        r"C:\Program Files\Microsoft Visual Studio\2022\Community",
-        r"C:\Program Files\Microsoft Visual Studio\2022\Professional",
-        r"C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
-    ]
-    
-    for p in vs_paths:
-        if Path(p).exists():
-            return "Visual Studio 17 2022"
-    
-    vs_paths_2019 = [
-        r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community",
-        r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional",
-    ]
-    
-    for p in vs_paths_2019:
-        if Path(p).exists():
-            return "Visual Studio 16 2019"
-    
-    return None
-
 def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) -> subprocess.CompletedProcess:
     """Run a command"""
     merged_env = os.environ.copy()
@@ -104,31 +81,23 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
     return result
 
 def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
-                     generator: str, build_type: str, 
-                     llvm_path: str = None, clang: str = None, clang_pp: str = None,
+                     build_type: str, clang: str, clang_pp: str,
                      extra_args: list = None) -> bool:
-    """Build a project with CMake"""
+    """Build a project with CMake using LLVM/Clang + Ninja"""
     
     if build_dir.exists():
         shutil.rmtree(build_dir)
     build_dir.mkdir(parents=True)
     
     # CMake configure
-    cmd = ["cmake", "-S", str(source_dir), "-B", str(build_dir), "-G", generator]
-    
-    if generator == "Ninja":
-        cmd.extend(["-DCMAKE_BUILD_TYPE=" + build_type])
-    
-    # Set compilers for LLVM
-    if llvm_path and clang and clang_pp:
-        cmd.extend([
-            f"-DCMAKE_C_COMPILER={clang}",
-            f"-DCMAKE_CXX_COMPILER={clang_pp}",
-        ])
-    
-    cmd.extend([
+    cmd = [
+        "cmake", "-S", str(source_dir), "-B", str(build_dir), 
+        "-G", "Ninja",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
+        f"-DCMAKE_C_COMPILER={clang}",
+        f"-DCMAKE_CXX_COMPILER={clang_pp}",
         f"-DCMAKE_INSTALL_PREFIX={install_dir}",
-    ])
+    ]
     
     if extra_args:
         cmd.extend(extra_args)
@@ -149,7 +118,7 @@ def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
     return True
 
 def build_skia(skia_dir: Path, build_type: str, skia_args: dict, depot_tools: Path) -> bool:
-    """Build Skia with gn + ninja"""
+    """Build Skia with gn + ninja using Clang"""
     
     # Add depot_tools to PATH
     env = os.environ.copy()
@@ -167,26 +136,22 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict, depot_tools: Pa
         print("  ERROR: ninja not found")
         return False
     
-    # Build GN args
+    # Build GN args for Clang
     gn_args = []
     gn_args.append(f'target_cpu="{skia_args.get("target_cpu", "x64")}"')
-    
-    if skia_args.get("clang_win"):
-        gn_args.append(f'clang_win="{skia_args["clang_win"]}"')
-        gn_args.append('cc="clang"')
-        gn_args.append('cxx="clang++"')
-        gn_args.append('extra_cflags_cc=["-frtti", "-fexceptions"]')
-    else:
-        gn_args.append('extra_cflags_cc=["/GR", "/EHsc"]')
+    gn_args.append(f'clang_win="{skia_args["clang_win"]}"')
+    gn_args.append('cc="clang"')
+    gn_args.append('cxx="clang++"')
+    gn_args.append('extra_cflags_cc=["-frtti", "-fexceptions"]')
     
     # Standard Skia args
     bool_args = [
-        ("is_official_build", True),
-        ("is_debug", False),
-        ("skia_enable_ganesh", True),
-        ("skia_enable_graphite", True),
-        ("skia_use_vulkan", True),
-        ("skia_use_gl", True),
+        ("is_official_build", skia_args.get("is_official_build", True)),
+        ("is_debug", skia_args.get("is_debug", False)),
+        ("skia_enable_ganesh", skia_args.get("skia_enable_ganesh", True)),
+        ("skia_enable_graphite", skia_args.get("skia_enable_graphite", True)),
+        ("skia_use_vulkan", skia_args.get("skia_use_vulkan", True)),
+        ("skia_use_gl", skia_args.get("skia_use_gl", True)),
         ("skia_use_system_expat", False),
         ("skia_use_system_harfbuzz", False),
         ("skia_use_system_icu", False),
@@ -195,13 +160,12 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict, depot_tools: Pa
         ("skia_use_system_freetype2", False),
         ("skia_use_system_libwebp", False),
         ("skia_use_system_zlib", False),
-        ("skia_enable_tools", False),
-        ("skia_enable_pdf", True),
+        ("skia_enable_tools", skia_args.get("skia_enable_tools", False)),
+        ("skia_enable_pdf", skia_args.get("skia_enable_pdf", True)),
         ("skia_use_angle", False),
     ]
     
-    for name, default in bool_args:
-        value = skia_args.get(name, default)
+    for name, value in bool_args:
         gn_args.append(f'{name}={"true" if value else "false"}')
     
     gn_args_str = " ".join(gn_args)
@@ -229,13 +193,14 @@ def build_deps(args):
     deps_dir = script_dir / "deps"
     build_dir = script_dir / "build_deps"
     install_dir = deps_dir / "installed"
+    depot_tools = deps_dir / "depot_tools"
     
     print("=" * 50)
     print("Skia Renderer - Building Dependencies")
     print("=" * 50)
     print()
     
-    # Detect tools
+    # Find LLVM (required)
     print("[Detecting Build Tools]")
     
     cmake = find_tool("cmake")
@@ -244,35 +209,19 @@ def build_deps(args):
         return 1
     print(f"  [OK] CMake: {cmake}")
     
-    # Find LLVM
     llvm_path, clang, clang_pp = find_llvm()
-    if llvm_path:
-        print(f"  [OK] LLVM: {llvm_path}")
+    if not llvm_path:
+        print("  ERROR: LLVM/Clang not found")
+        print("  Install LLVM: winget install LLVM.LLVM")
+        return 1
+    print(f"  [OK] LLVM: {llvm_path}")
     
-    # Find depot_tools for ninja
-    depot_tools = deps_dir / "depot_tools"
-    
-    # Determine generator
-    use_llvm = args.llvm or (llvm_path is not None and not args.vs)
-    
-    if use_llvm:
-        ninja = find_ninja(depot_tools)
-        if ninja:
-            print(f"  [OK] Ninja: {ninja}")
-            generator = "Ninja"
-        else:
-            print("  WARNING: Ninja not found, trying Visual Studio")
-            use_llvm = False
-    
-    if not use_llvm:
-        vs_gen = find_visual_studio()
-        if vs_gen:
-            print(f"  [OK] Visual Studio: {vs_gen}")
-            generator = vs_gen
-        else:
-            print("  ERROR: No suitable compiler found")
-            print("  Install LLVM with Ninja or Visual Studio")
-            return 1
+    ninja = find_ninja(depot_tools)
+    if not ninja:
+        print("  ERROR: Ninja not found")
+        print("  Install Ninja or ensure depot_tools is available")
+        return 1
+    print(f"  [OK] Ninja: {ninja}")
     
     print()
     
@@ -294,8 +243,8 @@ def build_deps(args):
             sdl_build = build_dir / "SDL3"
             try:
                 build_with_cmake(
-                    sdl_dir, sdl_build, install_dir, generator, build_type,
-                    llvm_path, clang, clang_pp,
+                    sdl_dir, sdl_build, install_dir, build_type,
+                    clang, clang_pp,
                     ["-DSDL_VULKAN=ON", "-DSDL_OPENGL=ON", "-DSDL_TEST=OFF", "-DSDL_TESTS=OFF"]
                 )
                 print("  [OK] SDL3")
@@ -316,8 +265,8 @@ def build_deps(args):
             vkb_build = build_dir / "vk-bootstrap"
             try:
                 build_with_cmake(
-                    vkb_dir, vkb_build, install_dir, generator, build_type,
-                    llvm_path, clang, clang_pp
+                    vkb_dir, vkb_build, install_dir, build_type,
+                    clang, clang_pp
                 )
                 print("  [OK] vk-bootstrap")
             except Exception as e:
@@ -336,12 +285,12 @@ def build_deps(args):
         else:
             skia_args = {
                 "target_cpu": args.target_cpu,
-                "clang_win": llvm_path if use_llvm else None,
+                "clang_win": llvm_path,
                 "is_official_build": args.build_type == "Release",
                 "is_debug": args.build_type == "Debug",
                 "skia_enable_tools": args.skia_tools,
-                "skia_enable_graphite": args.skia_graphite,
-                "skia_use_vulkan": args.skia_vulkan,
+                "skia_enable_graphite": True,
+                "skia_use_vulkan": True,
             }
             
             try:
@@ -369,7 +318,7 @@ def build_deps(args):
         if path.exists():
             print(f"  [OK] {name}")
     print()
-    print("Next: Run build_windows.py --llvm to build the main project")
+    print("Next: python build_windows.py")
     print()
     
     return 0
@@ -382,14 +331,8 @@ def main():
                        help="Build type (default: Release)")
     parser.add_argument("--target-cpu", default="x64", help="Target CPU (default: x64)")
     
-    # Compiler options
-    parser.add_argument("--llvm", action="store_true", help="Use LLVM/Clang + Ninja")
-    parser.add_argument("--vs", action="store_true", help="Use Visual Studio")
-    
     # Skia options
     parser.add_argument("--skia-tools", action="store_true", help="Build Skia tools")
-    parser.add_argument("--skia-graphite", action="store_true", default=True, help="Enable Graphite")
-    parser.add_argument("--skia-vulkan", action="store_true", default=True, help="Enable Vulkan")
     
     # Skip options
     parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
