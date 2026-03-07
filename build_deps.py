@@ -136,6 +136,8 @@ def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
     if platform.system() == "Windows":
         runtime_lib = "MultiThreaded" if build_type == "Release" else "MultiThreadedDebug"
         cmd.append(f"-DCMAKE_MSVC_RUNTIME_LIBRARY={runtime_lib}")
+        
+        
     
     # Add sccache as compiler launcher
     if sccache:
@@ -201,8 +203,11 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict,
     gn_args.append('cc="clang"')
     gn_args.append('cxx="clang++"')
     
+    crt_flag = "/MTd" if (build_type == "Debug") else "/MT"
+    
     if is_windows:
-        extra_flags = '["/GR", "/EHsc"]'
+        gn_args.append(f'extra_cflags=["{crt_flag}"]')
+        extra_flags = f'["/GR", "/EHsc", "{crt_flag}"]'
     else:
         extra_flags = '["-frtti", "-fexceptions"]'
     gn_args.append(f'extra_cflags_cc={extra_flags}')
