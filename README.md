@@ -11,6 +11,7 @@ A high-performance 2D rendering application using **SDL3**, **Skia Graphite**, *
 - 💾 VMA (Vulkan Memory Allocator) for efficient memory management
 - 📦 C++20 with clean architecture
 - 🛠️ Cross-platform Python build scripts
+- 🚀 sccache support for fast rebuilds
 
 ## Quick Start
 
@@ -22,16 +23,17 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed options.
 
 ## Requirements
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| LLVM/Clang | Latest | Required compiler |
-| Ninja | Latest | Build system (included with LLVM) |
-| CMake | 3.20+ | Build configuration |
-| Python | 3.8+ | Build scripts |
-| Vulkan SDK | 1.3+ | Graphics API |
-| Git | Latest | For cloning repos |
-| aria2 | Latest | Fast parallel downloads |
-| 7-Zip | Latest | Archive extraction |
+| Tool | Required | Notes |
+|------|----------|-------|
+| LLVM/Clang | ✅ | Required compiler |
+| Ninja | ✅ | Build system |
+| CMake | ✅ | Build configuration |
+| Python | ✅ | 3.8+, for build scripts |
+| Vulkan SDK | ✅ | Graphics API |
+| Git | ✅ | For cloning repos |
+| aria2 | ✅ | Fast parallel downloads |
+| 7-Zip | ✅ | Archive extraction |
+| sccache | ⭕ | Optional, speeds up rebuilds |
 
 ## Build Scripts
 
@@ -44,18 +46,20 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed options.
 
 ## Usage
 
-### Download Dependencies
+### One-Click Build
 ```bash
+python build_all.py
+```
+
+### Step-by-Step
+```bash
+# 1. Download dependencies
 python sync.py
-```
 
-### Build Dependencies
-```bash
+# 2. Build dependencies
 python build_deps.py --skia-tools
-```
 
-### Build Main Project
-```bash
+# 3. Build main project
 python build.py
 ```
 
@@ -82,6 +86,31 @@ python build.py
 --clean            Clean before building
 ```
 
+## sccache Support
+
+sccache is automatically detected and used when available. It caches compilation results to speed up rebuilds.
+
+**Install sccache:**
+```bash
+# Windows
+winget install Mozilla.sccache
+
+# Linux/macOS
+cargo install sccache
+```
+
+**Configure (optional):**
+```bash
+# Local disk cache (default)
+export SCCACHE_DIR=~/.cache/sccache
+export SCCACHE_MAX_SIZE=10G
+
+# S3 cache (for teams)
+export SCCACHE_BUCKET=my-bucket
+export AWS_ACCESS_KEY_ID=xxx
+export AWS_SECRET_ACCESS_KEY=xxx
+```
+
 ## Project Structure
 
 ```
@@ -106,6 +135,9 @@ skia-renderer/
 ```bash
 # Windows
 build\skia-renderer.exe
+
+# Linux/macOS
+./build/skia-renderer
 
 # Custom window size
 build\skia-renderer.exe --width 1920 --height 1080

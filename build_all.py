@@ -100,8 +100,10 @@ def main():
     print("=" * 50)
     print()
     
+    import platform
     build_dir = Path(__file__).parent / "build"
-    exe = build_dir / "skia-renderer.exe"
+    exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
+    exe = build_dir / exe_name
     
     print(f"Run: {exe}")
     print()
