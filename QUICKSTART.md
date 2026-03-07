@@ -1,126 +1,255 @@
 # Quick Start Guide
 
-## Windows Build (One-Click)
+## Prerequisites
 
-```cmd
-REM Install prerequisites first
+Install these tools before building:
+
+```powershell
+# Using winget
 winget install Microsoft.VisualStudio.2022.Community
 winget install Kitware.CMake
 winget install aria2
+winget install 7zip.7zip
 winget install Git.Git
 
-REM Set Vulkan SDK (download from https://vulkan.lunarg.com/)
-set VULKAN_SDK=C:\VulkanSDK\1.3.290.0
+# Python 3.8+ (install from python.org or:
+winget install Python.Python.3.12
 
-REM Build everything
+# Vulkan SDK (download from vulkan.lunarg.com)
+# Set environment variable:
+setx VULKAN_SDK "C:\VulkanSDK\1.3.290.0"
+```
+
+## One-Click Build
+
+```cmd
 build_all.bat
 ```
+
+This runs all three steps automatically.
 
 ## Step-by-Step Build
 
 ### 1. Download Dependencies
+
 ```cmd
-REM Standard download
+# Standard download
 sync_deps.bat
 
-REM Use Chinese mirrors for faster download
+# Use Chinese mirrors (faster in China)
 sync_deps.bat --mirror
 
-REM With proxy
+# With proxy
 sync_deps.bat --proxy http://127.0.0.1:7890
+
+# Skip Skia dependencies (if git-sync-deps fails)
+sync_deps.bat --skip-skia-deps
+
+# Using Python script directly
+python sync_deps.py --mirror --skip-skia-deps
 ```
+
+**Options:**
+- `--skip-skia` - Skip Skia
+- `--skip-sdl` - Skip SDL3
+- `--skip-vkbootstrap` - Skip vk-bootstrap
+- `--skip-vma` - Skip VulkanMemoryAllocator
+- `--skip-skia-deps` - Skip Skia internal dependencies
+- `--mirror` - Use Chinese mirrors (ghp.ci)
+- `--proxy URL` - Use proxy
+- `--python PATH` - Python executable path
 
 ### 2. Build Dependencies
+
 ```cmd
-REM Default build
+# Default build
 build_deps.bat
 
-REM With custom Skia options
-build_deps.bat --skia-clang-win "C:/Program Files/LLVM" --skia-enable-tools true
+# With LLVM/Clang
+build_deps.bat --skia-clang-win "C:/Program Files/LLVM"
 
-REM Skip certain dependencies
-build_deps.bat --skip-skia --skip-sdl
+# Enable Skia tools
+build_deps.bat --skia-enable-tools true
+
+# Debug build
+build_deps.bat --build-type Debug
+
+# Clean rebuild
+build_deps.bat --clean
+
+# Skip certain dependencies
+build_deps.bat --skip-skia
 ```
 
-### 3. Build Main Project
-```cmd
-REM Default build
-build_windows.bat
-
-REM Debug build
-build_windows.bat --build-type Debug
-
-REM Clean rebuild
-build_windows.bat --clean
-
-REM Custom dependency paths
-build_windows.bat --skia-path "C:/libs/skia" --sdl3-path "C:/libs/SDL3"
-```
-
-## Skia Build Options
-
+**Skia Options:**
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--skia-target-cpu` | x64 | Target CPU (x64, x86, arm64) |
-| `--skia-clang-win` | - | Path to LLVM/Clang |
-| `--skia-official-build` | true | Enable optimizations |
+| `--skia-clang-win` | - | LLVM/Clang path |
+| `--skia-official-build` | true | Optimized build |
 | `--skia-debug` | false | Debug build |
-| `--skia-enable-graphite` | true | Enable Graphite backend |
-| `--skia-enable-ganesh` | true | Enable Ganesh backend |
+| `--skia-enable-graphite` | true | Graphite backend |
+| `--skia-enable-ganesh` | true | Ganesh backend |
 | `--skia-use-vulkan` | true | Vulkan support |
 | `--skia-use-gl` | true | OpenGL support |
 | `--skia-enable-tools` | false | Build Skia tools |
-| `--skia-use-angle` | false | Use ANGLE |
+| `--skia-enable-pdf` | true | PDF support |
+| `--skia-use-angle` | false | ANGLE support |
+| `--skia-use-libavif` | false | AVIF support |
+| `--skia-use-freetype` | true | FreeType support |
 
-## Example Configurations
+### 3. Build Main Project
 
-### Minimal Build (Smallest Size)
 ```cmd
-build_deps.bat ^
-    --skia-enable-pdf false ^
-    --skia-enable-tools false ^
-    --skia-use-libavif false ^
-    --skia-use-angle false
+# Default build
+build_windows.bat
+
+# Debug build
+build_windows.bat --build-type Debug
+
+# Clean rebuild
+build_windows.bat --clean
+
+# Custom dependency paths
+build_windows.bat --vulkan-sdk "C:\VulkanSDK\1.3.290.0"
+
+build_windows.bat --skia-path "C:\libs\skia" --sdl3-path "C:\libs\SDL3"
 ```
 
-### Development Build (With Tools)
-```cmd
-build_deps.bat ^
-    --skia-enable-tools true ^
-    --build-type Debug
-```
+## Manual Skia Build
 
-### With LLVM/Clang
-```cmd
-build_deps.bat --skia-clang-win "C:/Program Files/LLVM"
-```
+If you want full control over Skia build:
 
-### Custom Skia Args (Manual)
 ```cmd
 cd deps\skia
-bin\gn gen out/Release --ide=vs --sln="skia" --args="target_cpu=\"x64\" clang_win=\"C:/Program Files/LLVM\" is_official_build=true is_debug=false skia_enable_ganesh=true skia_enable_graphite=true skia_use_vulkan=true skia_enable_tools=false"
+
+# Set depot_tools in PATH
+set PATH=%CD%\..\depot_tools;%PATH%
+
+# Generate with custom args
+bin\gn gen out/Release --ide=vs --sln="skia" --args="^
+target_cpu=\"x64\" ^
+clang_win=\"C:/Program Files/LLVM\" ^
+is_official_build=true ^
+is_debug=false ^
+skia_enable_ganesh=true ^
+skia_enable_graphite=true ^
+skia_use_vulkan=true ^
+skia_use_gl=true ^
+skia_enable_tools=true ^
+skia_enable_pdf=true ^
+skia_use_system_expat=false ^
+skia_use_system_harfbuzz=false ^
+skia_use_system_icu=false ^
+skia_use_system_zlib=false ^
+extra_cflags_cc=[\"/GR\", \"/EHsc\"]"
+
+# Build
 ninja -C out/Release
 ```
 
 ## Troubleshooting
 
-### CMake can't find Vulkan
+### SSL Error in emsdk Download
+
+This error is common when building Skia:
+```
+Error: Downloading URL '...wasm-binaries.zip': SSL: UNEXPECTED_EOF_WHILE_READING
+```
+
+**Solution:** emsdk is only needed for WebAssembly builds. For native builds:
+
 ```cmd
+# Skip Skia dependencies
+sync_deps.bat --skip-skia-deps
+
+# Or use fix script
+fix_skia_deps.bat
+```
+
+### CMake Can't Find Vulkan
+
+```cmd
+# Set VULKAN_SDK environment variable
 set VULKAN_SDK=C:\VulkanSDK\1.3.290.0
-build_windows.bat --vulkan-sdk "%VULKAN_SDK%"
+
+# Or pass directly
+build_windows.bat --vulkan-sdk "C:\VulkanSDK\1.3.290.0"
 ```
 
-### CMake can't find SDL3
+### aria2c or 7z Not Found
+
 ```cmd
-build_windows.bat --sdl3-path "C:\path\to\SDL3"
+winget install aria2
+winget install 7zip.7zip
+
+# Or add to PATH manually
+set PATH=C:\Program Files\7-Zip;%PATH%
 ```
 
-### Skia build fails
-- Make sure `depot_tools` is in PATH
-- Try using `--skia-clang-win` with LLVM path
-- Check that Python is installed
+### gn Not Found
 
-### Link errors
-- Make sure all dependencies are built
-- Check that Skia was built with RTTI enabled
-- Verify Vulkan SDK version matches
+```cmd
+# depot_tools must be in PATH
+set PATH=%CD%\deps\depot_tools;%PATH%
+
+# Or set DEPOT_TOOLS
+set DEPOT_TOOLS=C:\path\to\depot_tools
+```
+
+### Python Not Found
+
+```cmd
+# Install Python
+winget install Python.Python.3.12
+
+# Or specify path
+sync_deps.bat --python "C:\Python312\python.exe"
+build_deps.bat --python "C:\Python312\python.exe"
+```
+
+### Skia Build Fails with RTTI Errors
+
+Make sure RTTI is enabled in GN args:
+```
+extra_cflags_cc=["/GR", "/EHsc"]
+```
+
+This is automatically included in build_deps.bat.
+
+## File Structure After Build
+
+```
+skia-renderer/
+├── build/
+│   ├── Release/
+│   │   └── skia-renderer.exe
+│   └── compile_commands.json
+├── build_deps/
+│   ├── SDL3/
+│   └── vk-bootstrap/
+├── deps/
+│   ├── installed/          # Built dependencies
+│   │   ├── include/
+│   │   └── lib/
+│   ├── SDL3/
+│   ├── skia/
+│   │   └── out/Release/
+│   │       └── skia.lib
+│   ├── vk-bootstrap/
+│   ├── VulkanMemoryAllocator/
+│   └── depot_tools/
+└── downloads/              # Downloaded archives (can delete)
+```
+
+## Clean Build
+
+```cmd
+# Full clean rebuild
+build_all.bat --clean
+
+# Or manually
+rmdir /s /q build build_deps deps\installed
+build_deps.bat --clean
+build_windows.bat --clean
+```
