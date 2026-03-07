@@ -144,20 +144,18 @@ bool VulkanContext::createInstance(SDL_Window* window) {
 }
 
 bool VulkanContext::createDevice() {
-    if (!m_vkbInstance) {
+    if (m_vkbInstance.instance == VK_NULL_HANDLE) {
         std::cerr << "Vulkan instance not created via vk-bootstrap" << std::endl;
         return false;
     }
     
-    vkb::PhysicalDeviceSelector selector(*m_vkbInstance);
+    vkb::PhysicalDeviceSelector selector(m_vkbInstance);
     
+    // Vulkan 1.3 is required for Skia Graphite
     auto physicalDeviceResult = selector
         .set_surface(m_surface)
-        .set_minimum_version(1, 1)  // Vulkan 1.1 minimum for Graphite
+        .set_minimum_version(1, 3)
         .add_required_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)
-        // Graphite required extensions
-        .add_required_extension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)
-        .add_required_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)
         .select();
 
     if (!physicalDeviceResult) {
@@ -174,18 +172,14 @@ bool VulkanContext::createDevice() {
     vkGetPhysicalDeviceProperties(m_deviceInfo.physicalDevice, &props);
     m_deviceName = props.deviceName;
 
-    // Check for required features
-    VkPhysicalDeviceSynchronization2FeaturesKHR sync2Features{};
-    sync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
-    sync2Features.synchronization2 = VK_TRUE;
-
-    VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRenderingFeatures{};
-    dynamicRenderingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
-    dynamicRenderingFeatures.pNext = &sync2Features;
-    dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
+    // Enable Vulkan 1.3 features required for Graphite
+    VkPhysicalDeviceVulkan13Features vulkan13Features{};
+    vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vulkan13Features.synchronization2 = VK_TRUE;
+    vulkan13Features.dynamicRendering = VK_TRUE;
 
     vkb::DeviceBuilder deviceBuilder{vkbPhysicalDevice};
-    deviceBuilder.add_pNext(&dynamicRenderingFeatures);
+    deviceBuilder.add_pNext(&vulkan13Features);
 
     auto deviceResult = deviceBuilder.build();
     if (!deviceResult) {

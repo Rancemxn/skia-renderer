@@ -1,16 +1,20 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
 
-// Skia core headers (relative to skia root)
+// Skia core headers
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
 
-// Skia GPU headers - Use standard Ganesh paths for chrome/m146
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/vk/GrVkBackendContext.h"
+// Skia Graphite headers
+#include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/ContextOptions.h"
+#include "include/gpu/graphite/Recorder.h"
+#include "include/gpu/graphite/Surface.h"
+#include "include/gpu/vk/VulkanBackendContext.h"
+#include "include/gpu/graphite/vk/VulkanGraphiteContext.h"
 
 #include <iostream>
 #include <chrono>
@@ -19,7 +23,8 @@
 namespace skia_renderer {
 
 struct SkiaRenderer::Impl {
-    sk_sp<GrDirectContext> grContext;
+    std::unique_ptr<skgpu::graphite::Context> graphiteContext;
+    std::unique_ptr<skgpu::graphite::Recorder> recorder;
     sk_sp<SkSurface> surface;
 };
 
@@ -45,7 +50,7 @@ bool SkiaRenderer::initialize(VulkanContext* context, int width, int height) {
     }
 
     m_initialized = true;
-    std::cout << "Skia renderer initialized (" << width << "x" << height << ")" << std::endl;
+    std::cout << "Skia Graphite renderer initialized (" << width << "x" << height << ")" << std::endl;
     return true;
 }
 
@@ -55,10 +60,11 @@ void SkiaRenderer::shutdown() {
     }
 
     m_impl->surface.reset();
-    m_impl->grContext.reset();
+    m_impl->recorder.reset();
+    m_impl->graphiteContext.reset();
 
     m_initialized = false;
-    std::cout << "Skia renderer shut down." << std::endl;
+    std::cout << "Skia Graphite renderer shut down." << std::endl;
 }
 
 void SkiaRenderer::resize(int width, int height) {
@@ -72,7 +78,7 @@ void SkiaRenderer::resize(int width, int height) {
 
 bool SkiaRenderer::createSkiaContext() {
     // Create Skia Vulkan backend context
-    GrVkBackendContext backendContext{};
+    skgpu::VulkanBackendContext backendContext{};
     
     backendContext.fInstance = m_context->getInstance();
     backendContext.fPhysicalDevice = m_context->getPhysicalDevice();
@@ -80,9 +86,11 @@ bool SkiaRenderer::createSkiaContext() {
     backendContext.fQueue = m_context->getGraphicsQueue();
     backendContext.fGraphicsQueueIndex = m_context->getGraphicsFamilyIndex();
     
-    // Get device proc address
+    // Set required Vulkan 1.3 API version for Graphite
+    backendContext.fMaxAPIVersion = VK_API_VERSION_1_3;
+    
+    // Get proc address function
     backendContext.fGetProc = [](const char* name, VkInstance instance, VkDevice device) {
-        // Use vkGetInstanceProcAddr for instance functions, vkGetDeviceProcAddr for device functions
         if (device != VK_NULL_HANDLE) {
             return vkGetDeviceProcAddr(device, name);
         } else if (instance != VK_NULL_HANDLE) {
@@ -91,11 +99,19 @@ bool SkiaRenderer::createSkiaContext() {
         return (PFN_vkVoidFunction)nullptr;
     };
 
-    // Create GrDirectContext
-    m_impl->grContext = GrDirectContext::MakeVulkan(backendContext);
+    // Create Graphite Context
+    skgpu::graphite::ContextOptions options;
+    m_impl->graphiteContext = skgpu::graphite::ContextFactory::MakeVulkan(backendContext, options);
     
-    if (!m_impl->grContext) {
-        std::cerr << "Failed to create Skia Vulkan context" << std::endl;
+    if (!m_impl->graphiteContext) {
+        std::cerr << "Failed to create Skia Graphite Vulkan context" << std::endl;
+        return false;
+    }
+
+    // Create recorder for recording drawing commands
+    m_impl->recorder = m_impl->graphiteContext->makeRecorder();
+    if (!m_impl->recorder) {
+        std::cerr << "Failed to create Graphite recorder" << std::endl;
         return false;
     }
 
@@ -103,71 +119,73 @@ bool SkiaRenderer::createSkiaContext() {
 }
 
 bool SkiaRenderer::createSkiaSurface() {
-    if (!m_impl->grContext) {
+    if (!m_impl->recorder) {
         return false;
     }
 
-    // Create render target for current swapchain image
-    // Note: In a production renderer, we'd create one surface per swapchain image
-    // For simplicity, we're creating surfaces on-demand in render()
-    
-    return true;
-}
-
-void SkiaRenderer::render(VkFramebuffer framebuffer) {
-    if (!m_impl->grContext) {
-        return;
-    }
-
-    // Get swapchain image info
-    VkExtent2D extent = m_context->getSwapchainExtent();
+    // Determine color type from swapchain format
     VkFormat format = m_context->getSwapchainFormat();
-    
-    // Map Vulkan format to Skia color type
     SkColorType colorType = kRGBA_8888_SkColorType;
     if (format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM) {
         colorType = kBGRA_8888_SkColorType;
     }
 
-    // Create render target for this frame's swapchain image
-    GrVkRenderTargetInfo rtInfo{};
-    rtInfo.fImage = VK_NULL_HANDLE; // We'll get this from the swapchain
-    rtInfo.fFormat = format;
-    rtInfo.fSampleCount = 1;
-    rtInfo.fLevelCount = 1;
-    rtInfo.fOrigin = kTopLeft_GrSurfaceOrigin;
-    
-    // For now, use the simpler approach: wrap the framebuffer
-    // In a real implementation, we'd need the VkImage from the swapchain
-    
-    // Create surface from render target properties
+    // Create image info for the surface
+    SkImageInfo imageInfo = SkImageInfo::Make(
+        m_width, m_height,
+        colorType,
+        kPremul_SkAlphaType,
+        SkColorSpace::MakeSRGB()
+    );
+
+    // Create render target surface using Graphite
     SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-    
-    // Note: This is a simplified rendering approach
-    // In production, we'd use proper Vulkan interop with Graphite
-    // For now, we'll demonstrate basic rendering concept
-    
-    // Get or create surface
-    if (!m_impl->surface) {
-        // Create a CPU surface for demonstration
-        // In real Graphite usage, this would be a GPU surface from Vulkan
-        SkImageInfo imageInfo = SkImageInfo::Make(extent.width, extent.height, 
-                                                   colorType, kPremul_SkAlphaType);
-        m_impl->surface = SkSurfaces::Raster(imageInfo, &props);
-    }
+    m_impl->surface = SkSurfaces::RenderTarget(
+        m_impl->recorder.get(),
+        imageInfo,
+        skgpu::Mipmapped::kNo,
+        &props
+    );
 
     if (!m_impl->surface) {
-        std::cerr << "Failed to create Skia surface" << std::endl;
+        std::cerr << "Failed to create Graphite render target surface" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+void SkiaRenderer::render(VkFramebuffer framebuffer) {
+    if (!m_impl->recorder || !m_impl->graphiteContext) {
         return;
+    }
+
+    // Get or create surface
+    if (!m_impl->surface) {
+        if (!createSkiaSurface()) {
+            return;
+        }
     }
 
     // Draw content
     drawContent();
 
-    // Flush and submit
-    m_impl->surface->flushAndSubmit();
+    // Snap recording
+    auto recording = m_impl->recorder->snap();
+    if (!recording) {
+        std::cerr << "Failed to snap recording" << std::endl;
+        return;
+    }
+
+    // Insert recording into context
+    skgpu::graphite::InsertRecordingInfo insertInfo;
+    insertInfo.fRecording = recording.get();
+    m_impl->graphiteContext->insertRecording(insertInfo);
+
+    // Submit to GPU
+    m_impl->graphiteContext->submit();
     
-    (void)framebuffer; // Will be used in full implementation
+    (void)framebuffer; // Will be used in full swapchain integration
 }
 
 void SkiaRenderer::drawContent() {
@@ -212,12 +230,12 @@ void SkiaRenderer::drawContent() {
     // Draw some text
     paint.setColor(SK_ColorWHITE);
     paint.setTextSize(24);
-    canvas->drawString("Skia Graphite + Vulkan", 20, 40, paint);
+    canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 40, paint);
     
     // Draw FPS indicator area
     paint.setTextSize(16);
     paint.setColor(SkColorSetARGB(180, 180, 180, 180));
-    canvas->drawString("Renderer: Skia + Vulkan 1.3", 20, m_height - 40, paint);
+    canvas->drawString("Renderer: Skia Graphite + Vulkan 1.3", 20, m_height - 40, paint);
     canvas->drawString("Press ESC to exit", 20, m_height - 20, paint);
 }
 
