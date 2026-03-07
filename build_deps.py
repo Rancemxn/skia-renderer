@@ -211,7 +211,7 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict,
     bool_args = [
         ("is_official_build", skia_args.get("is_official_build", True)),
         ("is_debug", skia_args.get("is_debug", False)),
-        ("is_component_build", False)
+        ("is_component_build", False),
         ("skia_enable_ganesh", skia_args.get("skia_enable_ganesh", True)),
         ("skia_enable_graphite", skia_args.get("skia_enable_graphite", True)),
         ("skia_use_vulkan", skia_args.get("skia_use_vulkan", True)),
