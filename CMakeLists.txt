@@ -134,15 +134,18 @@ endif()
 # ========================================
 # Skia
 # ========================================
+# Skia's header structure: headers are directly in root (e.g., skia/core/SkSurface.h)
+# not in skia/include/core/ like typical projects
 if(USE_SYSTEM_SKIA)
     find_path(SKIA_INCLUDE_DIR NAMES core/SkSurface.h)
     find_library(SKIA_LIBRARY NAMES skia)
 else()
     if(DEFINED SKIA_DIR)
-        find_path(SKIA_INCLUDE_DIR NAMES core/SkSurface.h HINTS "${SKIA_DIR}")
+        # Skia headers are in the root directory
+        set(SKIA_INCLUDE_DIR "${SKIA_DIR}")
         find_library(SKIA_LIBRARY NAMES skia HINTS "${SKIA_DIR}/out/Release" "${SKIA_DIR}/out/Debug")
     else()
-        find_path(SKIA_INCLUDE_DIR NAMES core/SkSurface.h HINTS "${CMAKE_SOURCE_DIR}/deps/skia")
+        set(SKIA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/deps/skia")
         find_library(SKIA_LIBRARY NAMES skia 
             HINTS "${CMAKE_SOURCE_DIR}/deps/skia/out/Release" 
                   "${CMAKE_SOURCE_DIR}/deps/skia/out/Debug")
