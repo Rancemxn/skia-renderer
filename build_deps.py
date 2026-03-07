@@ -8,6 +8,7 @@ import sys
 import shutil
 import subprocess
 import argparse
+import stat
 import platform
 from pathlib import Path
 
@@ -108,13 +109,17 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
         raise subprocess.CalledProcessError(result.returncode, cmd)
     return result
 
+def remove_readonly(func, path, _):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
 def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
                      build_type: str, clang: str, clang_pp: str,
                      sccache: str = None, extra_args: list = None) -> bool:
     """Build a project with CMake using LLVM/Clang + Ninja + sccache"""
     
     if build_dir.exists():
-        shutil.rmtree(build_dir)
+        shutil.rmtree(build_dir, onerror=remove_readonly)
     build_dir.mkdir(parents=True)
     
     # CMake configure
