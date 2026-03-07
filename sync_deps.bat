@@ -67,9 +67,9 @@ echo   --skip-vma          Skip VMA download
 echo   --skip-skia-deps    Skip Skia dependencies sync
 echo   --no-overwrite      Don't overwrite existing files
 echo   --mirror            Use Chinese mirrors
-echo   --proxy URL         Use proxy (e.g., http://127.0.0.1:7890)
+echo   --proxy URL         Use proxy
 echo   --python PATH       Python executable path
-echo   --sdl-prebuilt      Download prebuilt SDL3 (no compilation needed)
+echo   --sdl-prebuilt      Download prebuilt SDL3
 echo   --help              Show this help
 exit /b 0
 
@@ -79,6 +79,9 @@ echo ========================================
 echo Skia Renderer - Dependency Sync
 echo ========================================
 echo.
+
+REM Save original directory
+set "ORIGINAL_DIR=%CD%"
 
 REM ========================================
 REM Check Tools
@@ -180,6 +183,8 @@ if exist "%SDL_DIR%" (
     )
 )
 
+cd /d "%SCRIPT_DIR%"
+
 if "%SDL_SOURCE%"=="1" (
     REM Download source code for compilation
     set "SDL_URL=https://github.com/libsdl-org/SDL/archive/refs/tags/release-%SDL_VERSION%.zip"
@@ -199,9 +204,10 @@ if "%SDL_SOURCE%"=="1" (
         
         REM Move SDL-release-3.4.2 to SDL3
         for /d %%d in ("!TEMP_DIR!\SDL-release-*") do (
+            if exist "%SDL_DIR%" rmdir /s /q "%SDL_DIR%"
             move "%%d" "%SDL_DIR%"
         )
-        rmdir /s /q "!TEMP_DIR!"
+        if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
         echo [OK] SDL3 source extracted
     )
 ) else (
@@ -223,14 +229,16 @@ if "%SDL_SOURCE%"=="1" (
         
         REM Move SDL3-3.4.2 to SDL3
         for /d %%d in ("!TEMP_DIR!\SDL3-*") do (
+            if exist "%SDL_DIR%" rmdir /s /q "%SDL_DIR%"
             move "%%d" "%SDL_DIR%"
         )
-        rmdir /s /q "!TEMP_DIR!"
+        if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
         echo [OK] SDL3 prebuilt extracted
     )
 )
 
 :sdl_done
+cd /d "%SCRIPT_DIR%"
 echo.
 
 REM ========================================
@@ -259,6 +267,8 @@ if exist "%VKBOOTSTRAP_DIR%" (
     )
 )
 
+cd /d "%SCRIPT_DIR%"
+
 set "VKBOOTSTRAP_URL=https://github.com/charles-lunarg/vk-bootstrap/archive/refs/tags/v%VKBOOTSTRAP_VERSION%.zip"
 if "%USE_MIRROR%"=="1" (
     set "VKBOOTSTRAP_URL=https://ghp.ci/https://github.com/charles-lunarg/vk-bootstrap/archive/refs/tags/v%VKBOOTSTRAP_VERSION%.zip"
@@ -275,13 +285,15 @@ if exist "%DOWNLOADS_DIR%\vk-bootstrap-%VKBOOTSTRAP_VERSION%.zip" (
     "%SEVENZIP%" x -y -o"!TEMP_DIR!" "%DOWNLOADS_DIR%\vk-bootstrap-%VKBOOTSTRAP_VERSION%.zip"
     
     for /d %%d in ("!TEMP_DIR!\vk-bootstrap-*") do (
+        if exist "%VKBOOTSTRAP_DIR%" rmdir /s /q "%VKBOOTSTRAP_DIR%"
         move "%%d" "%VKBOOTSTRAP_DIR%"
     )
-    rmdir /s /q "!TEMP_DIR!"
+    if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
     echo [OK] vk-bootstrap
 )
 
 :vkbootstrap_done
+cd /d "%SCRIPT_DIR%"
 echo.
 
 REM ========================================
@@ -310,6 +322,8 @@ if exist "%VMA_DIR%" (
     )
 )
 
+cd /d "%SCRIPT_DIR%"
+
 set "VMA_URL=https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v%VMA_VERSION%.zip"
 if "%USE_MIRROR%"=="1" (
     set "VMA_URL=https://ghp.ci/https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v%VMA_VERSION%.zip"
@@ -326,13 +340,15 @@ if exist "%DOWNLOADS_DIR%\VMA-%VMA_VERSION%.zip" (
     "%SEVENZIP%" x -y -o"!TEMP_DIR!" "%DOWNLOADS_DIR%\VMA-%VMA_VERSION%.zip"
     
     for /d %%d in ("!TEMP_DIR!\VulkanMemoryAllocator-*") do (
+        if exist "%VMA_DIR%" rmdir /s /q "%VMA_DIR%"
         move "%%d" "%VMA_DIR%"
     )
-    rmdir /s /q "!TEMP_DIR!"
+    if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
     echo [OK] VMA
 )
 
 :vma_done
+cd /d "%SCRIPT_DIR%"
 echo.
 
 REM ========================================
@@ -354,21 +370,17 @@ set "DEPOT_TOOLS_DIR=%DEPS_DIR%\depot_tools"
 REM Clone depot_tools
 if not exist "%DEPOT_TOOLS_DIR%" (
     echo Cloning depot_tools...
+    cd /d "%DEPS_DIR%"
     if "%USE_MIRROR%"=="1" (
-        git clone --depth 1 https://ghp.ci/https://chromium.googlesource.com/chromium/tools/depot_tools.git "%DEPOT_TOOLS_DIR%"
+        git clone --depth 1 https://ghp.ci/https://chromium.googlesource.com/chromium/tools/depot_tools.git
     ) else (
-        git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "%DEPOT_TOOLS_DIR%"
+        git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
     )
+    cd /d "%SCRIPT_DIR%"
 )
 
-REM Initialize depot_tools
-echo Initializing depot_tools...
-cd /d "%DEPOT_TOOLS_DIR%"
-call update_depot_tools.bat 2>nul
-cd /d "%SCRIPT_DIR%"
-
-REM Add depot_tools to PATH
-set "PATH=%DEPOT_TOOLS_DIR%;%PATH%"
+REM Initialize depot_tools (don't call update_depot_tools, it changes directory)
+echo depot_tools ready at: %DEPOT_TOOLS_DIR%
 
 REM Clone Skia
 if exist "%SKIA_DIR%" (
@@ -382,11 +394,13 @@ if exist "%SKIA_DIR%" (
 )
 
 echo Cloning Skia...
+cd /d "%DEPS_DIR%"
 if "%USE_MIRROR%"=="1" (
-    git clone --depth 1 https://ghp.ci/https://skia.googlesource.com/skia.git "%SKIA_DIR%"
+    git clone --depth 1 https://ghp.ci/https://skia.googlesource.com/skia.git
 ) else (
-    git clone --depth 1 https://skia.googlesource.com/skia.git "%SKIA_DIR%"
+    git clone --depth 1 https://skia.googlesource.com/skia.git
 )
+cd /d "%SCRIPT_DIR%"
 
 :skia_deps
 
@@ -399,8 +413,13 @@ echo.
 echo Syncing Skia dependencies...
 cd /d "%SKIA_DIR%"
 
+REM Set PATH for depot_tools
+set "PATH=%DEPOT_TOOLS_DIR%;%PATH%"
+
 REM Sync dependencies
 "%PYTHON_EXE%" tools/git-sync-deps
+
+cd /d "%SCRIPT_DIR%"
 
 if %ERRORLEVEL% neq 0 (
     echo.
@@ -410,6 +429,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 :skia_done
+cd /d "%SCRIPT_DIR%"
 
 echo.
 echo ========================================
@@ -423,8 +443,7 @@ if exist "%DEPS_DIR%\VulkanMemoryAllocator" echo   [OK] VulkanMemoryAllocator
 if exist "%DEPS_DIR%\skia" echo   [OK] Skia
 if exist "%DEPS_DIR%\depot_tools" echo   [OK] depot_tools
 echo.
-echo Next: Run build_deps.bat to compile dependencies
+echo Next: Run build_deps.bat --llvm to compile dependencies
 echo.
 
-cd /d "%SCRIPT_DIR%"
 endlocal
