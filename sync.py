@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Skia Renderer - Dependency Sync Script
 Downloads SDL3, vk-bootstrap, VMA, Skia with aria2 + 7z

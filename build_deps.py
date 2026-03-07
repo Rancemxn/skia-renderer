@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Skia Renderer - Build Dependencies
 Builds SDL3, vk-bootstrap, Skia with LLVM/Clang + Ninja
@@ -281,7 +280,7 @@ def build_deps(args):
         
         skia_dir = deps_dir / "skia"
         if not skia_dir.exists():
-            print("  ERROR: Skia not found. Run sync_deps.py first.")
+            print("  ERROR: Skia not found. Run sync.py first.")
         else:
             skia_args = {
                 "target_cpu": args.target_cpu,
@@ -318,7 +317,7 @@ def build_deps(args):
         if path.exists():
             print(f"  [OK] {name}")
     print()
-    print("Next: python build_windows.py")
+    print("Next: python build.py")
     print()
     
     return 0

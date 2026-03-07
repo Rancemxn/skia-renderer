@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Skia Renderer - Complete Build (One-Click)
 Runs sync -> build deps -> build project
@@ -58,7 +57,7 @@ def main():
         if args.proxy:
             sync_args.extend(["--proxy", args.proxy])
         
-        if run_script("sync_deps.py", sync_args) != 0:
+        if run_script("sync.py", sync_args) != 0:
             print("\nERROR: Dependency sync failed")
             return 1
     else:
@@ -91,7 +90,7 @@ def main():
     if args.clean:
         build_args.append("--clean")
     
-    if run_script("build_windows.py", build_args) != 0:
+    if run_script("build.py", build_args) != 0:
         print("\nERROR: Main project build failed")
         return 1
     

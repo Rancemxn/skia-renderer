@@ -41,13 +41,13 @@ This runs all three steps automatically.
 
 ```bash
 # Standard download
-python sync_deps.py
+python sync.py
 
 # With proxy
-python sync_deps.py --proxy http://127.0.0.1:7890
+python sync.py --proxy http://127.0.0.1:7890
 
 # Keep downloaded archives
-python sync_deps.py --keep-downloads
+python sync.py --keep-downloads
 ```
 
 **Options:**
@@ -62,7 +62,7 @@ python sync_deps.py --keep-downloads
 ### 2. Build Dependencies
 
 ```bash
-# Default build (uses LLVM/Clang + Ninja)
+# Default build
 python build_deps.py
 
 # Debug build
@@ -88,17 +88,17 @@ python build_deps.py --skia-tools
 
 ```bash
 # Default build
-python build_windows.py
+python build.py
 
 # Debug build
-python build_windows.py --build-type Debug
+python build.py --build-type Debug
 
 # Clean rebuild
-python build_windows.py --clean
+python build.py --clean
 
 # Custom paths
-python build_windows.py --vulkan-sdk "C:\VulkanSDK\1.3.290.0"
-python build_windows.py --skia-path "C:\libs\skia" --sdl3-path "C:\libs\SDL3"
+python build.py --vulkan-sdk "C:\VulkanSDK\1.3.290.0"
+python build.py --skia-path "C:\libs\skia" --sdl3-path "C:\libs\SDL3"
 ```
 
 ## Troubleshooting
@@ -119,7 +119,7 @@ Error: Downloading URL '...wasm-binaries.zip': SSL: UNEXPECTED_EOF_WHILE_READING
 set VULKAN_SDK=C:\VulkanSDK\1.3.290.0
 
 # Or pass directly
-python build_windows.py --vulkan-sdk "C:\VulkanSDK\1.3.290.0"
+python build.py --vulkan-sdk "C:\VulkanSDK\1.3.290.0"
 ```
 
 ### LLVM/Clang Not Found
@@ -168,5 +168,5 @@ python build_all.py --clean
 # Or manually
 rm -rf build build_deps deps/installed
 python build_deps.py --clean
-python build_windows.py --clean
+python build.py --clean
 ```

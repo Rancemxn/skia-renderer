@@ -38,15 +38,15 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed options.
 | Script | Description |
 |--------|-------------|
 | `build_all.py` | One-click complete build |
-| `sync_deps.py` | Download all dependencies |
+| `sync.py` | Download all dependencies |
 | `build_deps.py` | Build SDL3, vk-bootstrap, Skia |
-| `build_windows.py` | Build main project |
+| `build.py` | Build main project |
 
 ## Usage
 
 ### Download Dependencies
 ```bash
-python sync_deps.py
+python sync.py
 ```
 
 ### Build Dependencies
@@ -56,12 +56,12 @@ python build_deps.py --skia-tools
 
 ### Build Main Project
 ```bash
-python build_windows.py
+python build.py
 ```
 
 ## Options
 
-### sync_deps.py
+### sync.py
 ```
 --proxy URL        Use proxy for downloads
 --keep-downloads   Keep downloaded archives
@@ -75,7 +75,7 @@ python build_windows.py
 --clean            Clean before building
 ```
 
-### build_windows.py
+### build.py
 ```
 --build-type TYPE  Release or Debug
 --vulkan-sdk PATH  Vulkan SDK path
@@ -95,9 +95,9 @@ skia-renderer/
 │       ├── Swapchain.h/cpp      # Swapchain management
 │       └── SkiaRenderer.h/cpp   # Skia Graphite
 ├── deps/                        # Dependencies
-├── sync_deps.py                 # Download dependencies
+├── sync.py                      # Download dependencies
 ├── build_deps.py                # Build dependencies
-├── build_windows.py             # Build main project
+├── build.py                     # Build main project
 └── build_all.py                 # One-click build
 ```
 
