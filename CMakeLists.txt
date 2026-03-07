@@ -295,31 +295,6 @@ else()
     )
 endif()
 
-# ========================================
-# Copy DLLs on Windows
-# ========================================
-if(WIN32)
-    # Copy SDL3 DLL
-    if(TARGET SDL3::SDL3-shared)
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:SDL3::SDL3-shared>"
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>
-        )
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/SDL3/lib/SDL3.dll")
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/deps/SDL3/lib/SDL3.dll"
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>
-        )
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/installed/bin/SDL3.dll")
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/deps/installed/bin/SDL3.dll"
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>
-        )
-    endif()
-endif()
 
 # ========================================
 # RPATH for Unix
