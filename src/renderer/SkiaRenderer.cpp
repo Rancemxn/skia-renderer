@@ -98,6 +98,12 @@ bool SkiaRenderer::createSkiaContext() {
         return vkGetInstanceProcAddr(instance, name);
     };
 
+    std::cout << "Creating Skia Graphite context..." << std::endl;
+    std::cout << "  Instance: " << (m_context->getInstance() ? "valid" : "null") << std::endl;
+    std::cout << "  PhysicalDevice: " << (m_context->getPhysicalDevice() ? "valid" : "null") << std::endl;
+    std::cout << "  Device: " << (m_context->getDevice() ? "valid" : "null") << std::endl;
+    std::cout << "  Queue: " << (m_context->getGraphicsQueue() ? "valid" : "null") << std::endl;
+
     // Get physical device features
     vkGetPhysicalDeviceFeatures(
         m_context->getPhysicalDevice(),
@@ -117,6 +123,7 @@ bool SkiaRenderer::createSkiaContext() {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
 
+    std::cout << "  Initializing Vulkan extensions..." << std::endl;
     m_impl->vkExtensions.init(
         getProc,
         m_context->getInstance(),
@@ -145,6 +152,8 @@ bool SkiaRenderer::createSkiaContext() {
     
     backendContext.fGetProc = getProc;
 
+    std::cout << "  Backend context configured, creating Graphite context..." << std::endl;
+
     // Create Graphite Context
     skgpu::graphite::ContextOptions options;
     m_impl->graphiteContext = skgpu::graphite::ContextFactory::MakeVulkan(backendContext, options);
@@ -161,6 +170,7 @@ bool SkiaRenderer::createSkiaContext() {
         return false;
     }
 
+    std::cout << "  Skia Graphite context created successfully!" << std::endl;
     return true;
 }
 
