@@ -92,13 +92,17 @@ bool SkiaRenderer::createSkiaContext() {
     backendContext.fMaxAPIVersion = VK_API_VERSION_1_3;
     
     // Get proc address function
+    // Note: vkEnumerateInstanceVersion can be called before instance creation,
+    // so we need to handle the case where both instance and device are null.
+    // Per Vulkan spec, vkGetInstanceProcAddr can accept VK_NULL_HANDLE for
+    // instance-level functions that don't require an instance.
     backendContext.fGetProc = [](const char* name, VkInstance instance, VkDevice device) {
         if (device != VK_NULL_HANDLE) {
             return vkGetDeviceProcAddr(device, name);
-        } else if (instance != VK_NULL_HANDLE) {
-            return vkGetInstanceProcAddr(instance, name);
         }
-        return (PFN_vkVoidFunction)nullptr;
+        // For instance-level functions (including vkEnumerateInstanceVersion),
+        // we can pass VK_NULL_HANDLE to vkGetInstanceProcAddr
+        return vkGetInstanceProcAddr(instance, name);
     };
 
     // Create Graphite Context
