@@ -1,6 +1,5 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
-#include "VulkanAllocator.h"
 
 // Skia core headers
 #include "include/core/SkSurface.h"
@@ -22,6 +21,9 @@
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteContext.h"
 
+// Skia Vulkan Memory Allocator (internal)
+#include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
+
 #include <iostream>
 #include <chrono>
 #include <cmath>
@@ -34,7 +36,7 @@ struct SkiaRenderer::Impl {
     sk_sp<SkSurface> surface;
     skgpu::VulkanExtensions vkExtensions;
     VkPhysicalDeviceFeatures physicalDeviceFeatures{};
-    sk_sp<VulkanAllocator> vulkanAllocator;
+    sk_sp<skgpu::VulkanMemoryAllocator> vulkanAllocator;
 };
 
 SkiaRenderer::SkiaRenderer() : m_impl(std::make_unique<Impl>()) {}
@@ -137,15 +139,6 @@ bool SkiaRenderer::createSkiaContext() {
         deviceExtensions
     );
 
-    // Create VMA-based memory allocator
-    std::cout << "  Creating VMA memory allocator..." << std::endl;
-    m_impl->vulkanAllocator = sk_make_sp<VulkanAllocator>(
-        m_context->getInstance(),
-        m_context->getPhysicalDevice(),
-        m_context->getDevice(),
-        VK_API_VERSION_1_3
-    );
-
     // Create Skia Vulkan backend context
     skgpu::VulkanBackendContext backendContext{};
     
@@ -162,10 +155,24 @@ bool SkiaRenderer::createSkiaContext() {
     backendContext.fVkExtensions = &m_impl->vkExtensions;
     backendContext.fDeviceFeatures = &m_impl->physicalDeviceFeatures;
     
-    // Set memory allocator
-    backendContext.fMemoryAllocator = m_impl->vulkanAllocator;
-    
     backendContext.fGetProc = getProc;
+
+    // Create memory allocator using Skia's internal VMA wrapper
+    // This must be done after backendContext is fully configured
+    std::cout << "  Creating VMA memory allocator via Skia..." << std::endl;
+    m_impl->vulkanAllocator = skgpu::VulkanMemoryAllocators::Make(
+        backendContext,
+        skgpu::ThreadSafe::kNo
+    );
+    
+    if (!m_impl->vulkanAllocator) {
+        std::cerr << "Failed to create Vulkan memory allocator" << std::endl;
+        return false;
+    }
+    std::cout << "  VMA memory allocator created successfully" << std::endl;
+    
+    // Set memory allocator in backend context
+    backendContext.fMemoryAllocator = m_impl->vulkanAllocator;
 
     std::cout << "  Backend context configured, creating Graphite context..." << std::endl;
 
