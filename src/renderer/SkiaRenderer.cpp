@@ -1,15 +1,16 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
 
-// Skia headers
+// Skia core headers (relative to skia root)
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
-#include "include/gpu/ganesh/vk/VulkanBackendContext.h"
-#include "include/gpu/ganesh/vk/VulkanDirectContext.h"
-#include "include/gpu/GpuTypes.h"
+
+// Skia GPU headers - Use standard Ganesh paths for chrome/m146
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/vk/GrVkBackendContext.h"
 
 #include <iostream>
 #include <chrono>
@@ -91,7 +92,7 @@ bool SkiaRenderer::createSkiaContext() {
     };
 
     // Create GrDirectContext
-    m_impl->grContext = GrDirectContexts::MakeVulkan(backendContext);
+    m_impl->grContext = GrDirectContext::MakeVulkan(backendContext);
     
     if (!m_impl->grContext) {
         std::cerr << "Failed to create Skia Vulkan context" << std::endl;

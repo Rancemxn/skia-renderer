@@ -148,7 +148,8 @@ void Application::processEvents() {
                 break;
                 
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.keysym.sym == SDLK_ESCAPE) {
+                // SDL3: event.key.keysym.sym -> event.key.key
+                if (event.key.key == SDLK_ESCAPE) {
                     m_impl->running = false;
                 }
                 break;

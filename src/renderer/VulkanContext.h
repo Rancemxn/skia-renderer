@@ -5,9 +5,14 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 
 // Forward declarations
 struct SDL_Window;
+
+namespace vkb {
+    struct Instance;
+}
 
 namespace skia_renderer {
 
@@ -64,6 +69,9 @@ private:
 
     VkInstance m_instance = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+    
+    // vkb::Instance wrapper (for vk-bootstrap API)
+    std::optional<vkb::Instance> m_vkbInstance;
     VulkanDeviceInfo m_deviceInfo;
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
     

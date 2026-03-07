@@ -130,6 +130,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
 
     vkb::Instance vkbInstance = instanceResult.value();
     m_instance = vkbInstance.instance;
+    m_vkbInstance = std::move(vkbInstance);  // Save for later use
 
     // Create surface
     if (!SDL_Vulkan_CreateSurface(window, m_instance, nullptr, &m_surface)) {
@@ -143,7 +144,12 @@ bool VulkanContext::createInstance(SDL_Window* window) {
 }
 
 bool VulkanContext::createDevice() {
-    vkb::PhysicalDeviceSelector selector(vkb::Instance{m_instance});
+    if (!m_vkbInstance) {
+        std::cerr << "Vulkan instance not created via vk-bootstrap" << std::endl;
+        return false;
+    }
+    
+    vkb::PhysicalDeviceSelector selector(*m_vkbInstance);
     
     auto physicalDeviceResult = selector
         .set_surface(m_surface)
@@ -340,7 +346,8 @@ void VulkanContext::endFrame() {
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[m_currentFrame];
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &m_swapchain->getSwapchain();
+    VkSwapchainKHR swapchain = m_swapchain->getSwapchain();
+    presentInfo.pSwapchains = &swapchain;
     presentInfo.pImageIndices = &m_currentImageIndex;
 
     result = vkQueuePresentKHR(m_deviceInfo.presentQueue, &presentInfo);
