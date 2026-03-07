@@ -10,6 +10,9 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkFont.h"
 
+// Skia GPU headers
+#include "include/gpu/vk/VulkanExtensions.h"
+
 // Skia Graphite headers
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
@@ -28,6 +31,8 @@ struct SkiaRenderer::Impl {
     std::unique_ptr<skgpu::graphite::Context> graphiteContext;
     std::unique_ptr<skgpu::graphite::Recorder> recorder;
     sk_sp<SkSurface> surface;
+    skgpu::VulkanExtensions vkExtensions;
+    VkPhysicalDeviceFeatures physicalDeviceFeatures{};
 };
 
 SkiaRenderer::SkiaRenderer() : m_impl(std::make_unique<Impl>()) {}
@@ -79,6 +84,49 @@ void SkiaRenderer::resize(int width, int height) {
 }
 
 bool SkiaRenderer::createSkiaContext() {
+    // Get proc address function
+    // Note: vkEnumerateInstanceVersion can be called before instance creation,
+    // so we need to handle the case where both instance and device are null.
+    // Per Vulkan spec, vkGetInstanceProcAddr can accept VK_NULL_HANDLE for
+    // instance-level functions that don't require an instance.
+    auto getProc = [](const char* name, VkInstance instance, VkDevice device) {
+        if (device != VK_NULL_HANDLE) {
+            return vkGetDeviceProcAddr(device, name);
+        }
+        // For instance-level functions (including vkEnumerateInstanceVersion),
+        // we can pass VK_NULL_HANDLE to vkGetInstanceProcAddr
+        return vkGetInstanceProcAddr(instance, name);
+    };
+
+    // Get physical device features
+    vkGetPhysicalDeviceFeatures(
+        m_context->getPhysicalDevice(),
+        &m_impl->physicalDeviceFeatures
+    );
+
+    // Initialize Vulkan extensions
+    // Extensions we're using
+    const char* instanceExtensions[] = {
+        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+#ifdef ENABLE_VULKAN_VALIDATION
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+#endif
+    };
+    
+    const char* deviceExtensions[] = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    };
+
+    m_impl->vkExtensions.init(
+        getProc,
+        m_context->getInstance(),
+        m_context->getPhysicalDevice(),
+        sizeof(instanceExtensions) / sizeof(instanceExtensions[0]),
+        instanceExtensions,
+        sizeof(deviceExtensions) / sizeof(deviceExtensions[0]),
+        deviceExtensions
+    );
+
     // Create Skia Vulkan backend context
     skgpu::VulkanBackendContext backendContext{};
     
@@ -91,19 +139,11 @@ bool SkiaRenderer::createSkiaContext() {
     // Set required Vulkan 1.3 API version for Graphite
     backendContext.fMaxAPIVersion = VK_API_VERSION_1_3;
     
-    // Get proc address function
-    // Note: vkEnumerateInstanceVersion can be called before instance creation,
-    // so we need to handle the case where both instance and device are null.
-    // Per Vulkan spec, vkGetInstanceProcAddr can accept VK_NULL_HANDLE for
-    // instance-level functions that don't require an instance.
-    backendContext.fGetProc = [](const char* name, VkInstance instance, VkDevice device) {
-        if (device != VK_NULL_HANDLE) {
-            return vkGetDeviceProcAddr(device, name);
-        }
-        // For instance-level functions (including vkEnumerateInstanceVersion),
-        // we can pass VK_NULL_HANDLE to vkGetInstanceProcAddr
-        return vkGetInstanceProcAddr(instance, name);
-    };
+    // Set extensions and features
+    backendContext.fVkExtensions = &m_impl->vkExtensions;
+    backendContext.fDeviceFeatures = &m_impl->physicalDeviceFeatures;
+    
+    backendContext.fGetProc = getProc;
 
     // Create Graphite Context
     skgpu::graphite::ContextOptions options;
