@@ -27,18 +27,12 @@ def main():
                        help="Build type (default: Release)")
     parser.add_argument("--clean", action="store_true", help="Clean before building")
     
-    # Compiler options
-    parser.add_argument("--llvm", action="store_true", help="Use LLVM/Clang + Ninja")
-    parser.add_argument("--vs", action="store_true", help="Use Visual Studio")
-    
     # Download options
-    parser.add_argument("--mirror", action="store_true", help="Use Chinese mirrors")
     parser.add_argument("--proxy", help="Proxy URL for downloads")
     
     # Skip options
     parser.add_argument("--skip-sync", action="store_true", help="Skip dependency sync")
     parser.add_argument("--skip-deps", action="store_true", help="Skip dependency build")
-    parser.add_argument("--skip-skia-deps", action="store_true", help="Skip Skia deps sync")
     
     # Skia options
     parser.add_argument("--skia-tools", action="store_true", help="Build Skia tools")
@@ -51,9 +45,7 @@ def main():
     print()
     print("Options:")
     print(f"  Build Type: {args.build_type}")
-    print(f"  Use LLVM: {args.llvm or not args.vs}")
     print(f"  Clean: {args.clean}")
-    print(f"  Use Mirror: {args.mirror}")
     print()
     
     # Step 1: Sync dependencies
@@ -63,12 +55,8 @@ def main():
         print("=" * 50)
         
         sync_args = []
-        if args.mirror:
-            sync_args.append("--mirror")
         if args.proxy:
             sync_args.extend(["--proxy", args.proxy])
-        if args.skip_skia_deps:
-            sync_args.append("--skip-skia-deps")
         
         if run_script("sync_deps.py", sync_args) != 0:
             print("\nERROR: Dependency sync failed")
@@ -83,10 +71,6 @@ def main():
         print("=" * 50)
         
         deps_args = ["--build-type", args.build_type]
-        if args.llvm:
-            deps_args.append("--llvm")
-        if args.vs:
-            deps_args.append("--vs")
         if args.clean:
             deps_args.append("--clean")
         if args.skia_tools:
@@ -104,10 +88,6 @@ def main():
     print("=" * 50)
     
     build_args = ["--build-type", args.build_type]
-    if args.llvm:
-        build_args.append("--llvm")
-    if args.vs:
-        build_args.append("--vs")
     if args.clean:
         build_args.append("--clean")
     
@@ -122,10 +102,7 @@ def main():
     print()
     
     build_dir = Path(__file__).parent / "build"
-    if args.llvm or not args.vs:
-        exe = build_dir / "skia-renderer.exe"
-    else:
-        exe = build_dir / args.build_type / "skia-renderer.exe"
+    exe = build_dir / "skia-renderer.exe"
     
     print(f"Run: {exe}")
     print()

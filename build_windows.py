@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Skia Renderer - Build Main Project
-Builds skia-renderer with LLVM/Clang or Visual Studio
+Builds skia-renderer with LLVM/Clang + Ninja
 """
 
 import os
@@ -64,20 +64,6 @@ def find_ninja(depot_tools: Path = None) -> str:
     
     return None
 
-def find_visual_studio() -> str:
-    """Find Visual Studio generator"""
-    vs_paths = [
-        r"C:\Program Files\Microsoft Visual Studio\2022\Community",
-        r"C:\Program Files\Microsoft Visual Studio\2022\Professional",
-        r"C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
-    ]
-    
-    for p in vs_paths:
-        if Path(p).exists():
-            return "Visual Studio 17 2022"
-    
-    return None
-
 def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) -> subprocess.CompletedProcess:
     """Run a command"""
     merged_env = os.environ.copy()
@@ -99,7 +85,7 @@ def build_project(args):
     depot_tools = deps_dir / "depot_tools"
     
     print("=" * 50)
-    print("Skia Graphite Renderer - Windows Build")
+    print("Skia Graphite Renderer - Build")
     print("=" * 50)
     print()
     
@@ -112,31 +98,19 @@ def build_project(args):
         return 1
     print(f"  [OK] CMake: {cmake}")
     
-    # Find LLVM
+    # Find LLVM (required)
     llvm_path, clang, clang_pp = find_llvm()
-    if llvm_path:
-        print(f"  [OK] LLVM: {llvm_path}")
+    if not llvm_path:
+        print("  ERROR: LLVM/Clang not found")
+        print("  Install LLVM: winget install LLVM.LLVM")
+        return 1
+    print(f"  [OK] LLVM: {llvm_path}")
     
-    # Determine generator
-    use_llvm = args.llvm or (llvm_path is not None and not args.vs)
-    
-    if use_llvm:
-        ninja = find_ninja(depot_tools)
-        if ninja:
-            print(f"  [OK] Ninja: {ninja}")
-            generator = "Ninja"
-        else:
-            print("  WARNING: Ninja not found, trying Visual Studio")
-            use_llvm = False
-    
-    if not use_llvm:
-        vs_gen = find_visual_studio()
-        if vs_gen:
-            print(f"  [OK] Visual Studio: {vs_gen}")
-            generator = vs_gen
-        else:
-            print("  ERROR: No suitable compiler found")
-            return 1
+    ninja = find_ninja(depot_tools)
+    if not ninja:
+        print("  ERROR: Ninja not found")
+        return 1
+    print(f"  [OK] Ninja: {ninja}")
     
     print()
     
@@ -155,9 +129,7 @@ def build_project(args):
     
     print("Configuration:")
     print(f"  Build Type: {args.build_type}")
-    print(f"  Generator: {generator}")
-    if llvm_path:
-        print(f"  LLVM: {llvm_path}")
+    print(f"  Generator: Ninja (LLVM/Clang)")
     print()
     
     print("Dependencies:")
@@ -179,18 +151,14 @@ def build_project(args):
     print("Configuring project...")
     print()
     
-    cmd = ["cmake", "-S", str(script_dir), "-B", str(build_dir), "-G", generator]
-    
-    if generator == "Ninja":
-        cmd.append(f"-DCMAKE_BUILD_TYPE={args.build_type}")
-    
-    if llvm_path and clang and clang_pp:
-        cmd.extend([
-            f"-DCMAKE_C_COMPILER={clang}",
-            f"-DCMAKE_CXX_COMPILER={clang_pp}",
-        ])
-    
-    cmd.append("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
+    cmd = [
+        "cmake", "-S", str(script_dir), "-B", str(build_dir),
+        "-G", "Ninja",
+        f"-DCMAKE_BUILD_TYPE={args.build_type}",
+        f"-DCMAKE_C_COMPILER={clang}",
+        f"-DCMAKE_CXX_COMPILER={clang_pp}",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    ]
     
     if vulkan_sdk:
         cmd.append(f"-DVULKAN_SDK={vulkan_sdk}")
@@ -211,7 +179,6 @@ def build_project(args):
         print("\nTroubleshooting:")
         print("  1. Set VULKAN_SDK environment variable")
         print("  2. Run sync_deps.py and build_deps.py first")
-        print("  3. Use --vulkan-sdk, --sdl3-path options")
         return 1
     
     # Build
@@ -232,11 +199,7 @@ def build_project(args):
     print("=" * 50)
     print()
     
-    if generator == "Ninja":
-        exe_path = build_dir / "skia-renderer.exe"
-    else:
-        exe_path = build_dir / args.build_type / "skia-renderer.exe"
-    
+    exe_path = build_dir / "skia-renderer.exe"
     if exe_path.exists():
         print(f"Executable: {exe_path}")
         print(f"\nRun: {exe_path}")
@@ -254,10 +217,6 @@ def main():
     parser.add_argument("--build-type", default="Release", choices=["Release", "Debug"],
                        help="Build type (default: Release)")
     parser.add_argument("--clean", action="store_true", help="Clean before building")
-    
-    # Compiler options
-    parser.add_argument("--llvm", action="store_true", help="Use LLVM/Clang + Ninja")
-    parser.add_argument("--vs", action="store_true", help="Use Visual Studio")
     
     # Custom paths
     parser.add_argument("--vulkan-sdk", help="Vulkan SDK path")

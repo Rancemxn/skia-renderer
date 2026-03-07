@@ -15,8 +15,7 @@ A high-performance 2D rendering application using **SDL3**, **Skia Graphite**, *
 ## Quick Start
 
 ```bash
-# One-click build
-python build_all.py --llvm
+python build_all.py
 ```
 
 See [QUICKSTART.md](QUICKSTART.md) for detailed options.
@@ -25,17 +24,14 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed options.
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| CMake | 3.20+ | Build system |
+| LLVM/Clang | Latest | Required compiler |
+| Ninja | Latest | Build system (included with LLVM) |
+| CMake | 3.20+ | Build configuration |
 | Python | 3.8+ | Build scripts |
 | Vulkan SDK | 1.3+ | Graphics API |
 | Git | Latest | For cloning repos |
 | aria2 | Latest | Fast parallel downloads |
 | 7-Zip | Latest | Archive extraction |
-
-**Compiler (choose one):**
-- LLVM/Clang + Ninja (recommended)
-- Visual Studio 2022 (Windows)
-- GCC/Clang (Linux/macOS)
 
 ## Build Scripts
 
@@ -50,33 +46,30 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed options.
 
 ### Download Dependencies
 ```bash
-python sync_deps.py --mirror --skip-skia-deps
+python sync_deps.py
 ```
 
 ### Build Dependencies
 ```bash
-python build_deps.py --llvm --skia-tools
+python build_deps.py --skia-tools
 ```
 
 ### Build Main Project
 ```bash
-python build_windows.py --llvm
+python build_windows.py
 ```
 
 ## Options
 
 ### sync_deps.py
 ```
---mirror           Use Chinese mirrors
 --proxy URL        Use proxy for downloads
---skip-skia-deps   Skip Skia dependencies
 --keep-downloads   Keep downloaded archives
+--no-overwrite     Don't overwrite existing
 ```
 
 ### build_deps.py
 ```
---llvm             Use LLVM/Clang + Ninja
---vs               Use Visual Studio
 --build-type TYPE  Release or Debug
 --skia-tools       Build Skia tools
 --clean            Clean before building
@@ -84,8 +77,6 @@ python build_windows.py --llvm
 
 ### build_windows.py
 ```
---llvm             Use LLVM/Clang + Ninja
---vs               Use Visual Studio
 --build-type TYPE  Release or Debug
 --vulkan-sdk PATH  Vulkan SDK path
 --clean            Clean before building
@@ -115,9 +106,6 @@ skia-renderer/
 ```bash
 # Windows
 build\skia-renderer.exe
-
-# Linux
-./build/skia-renderer
 
 # Custom window size
 build\skia-renderer.exe --width 1920 --height 1080

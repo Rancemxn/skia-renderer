@@ -10,27 +10,27 @@ winget install Kitware.CMake
 winget install aria2
 winget install 7zip.7zip
 winget install Git.Git
+winget install LLVM.LLVM
 
 # Python 3.8+
 winget install Python.Python.3.12
-
-# LLVM/Clang + Ninja (recommended)
-winget install LLVM.LLVM
-
-# Or Visual Studio 2022 with C++ workload
 
 # Vulkan SDK (download from vulkan.lunarg.com)
 setx VULKAN_SDK "C:\VulkanSDK\1.3.290.0"
 ```
 
+**Required:**
+- LLVM/Clang + Ninja (compiler)
+- CMake 3.20+
+- Python 3.8+
+- aria2 + 7-Zip (for downloads)
+- Git
+- Vulkan SDK 1.3+
+
 ## One-Click Build
 
 ```bash
-# Windows
-python build_all.py --llvm
-
-# Linux/macOS
-python3 build_all.py
+python build_all.py
 ```
 
 This runs all three steps automatically.
@@ -43,14 +43,8 @@ This runs all three steps automatically.
 # Standard download
 python sync_deps.py
 
-# Use Chinese mirrors (faster in China)
-python sync_deps.py --mirror
-
 # With proxy
 python sync_deps.py --proxy http://127.0.0.1:7890
-
-# Skip Skia dependencies (if git-sync-deps fails)
-python sync_deps.py --skip-skia-deps
 
 # Keep downloaded archives
 python sync_deps.py --keep-downloads
@@ -61,24 +55,15 @@ python sync_deps.py --keep-downloads
 - `--skip-sdl` - Skip SDL3
 - `--skip-vkbootstrap` - Skip vk-bootstrap
 - `--skip-vma` - Skip VulkanMemoryAllocator
-- `--skip-skia-deps` - Skip Skia internal dependencies
-- `--mirror` - Use Chinese mirrors (ghp.ci)
 - `--proxy URL` - Use proxy
 - `--no-overwrite` - Don't overwrite existing
-- `--sdl-prebuilt` - Download prebuilt SDL3
 - `--keep-downloads` - Keep downloaded archives (deleted by default)
 
 ### 2. Build Dependencies
 
 ```bash
-# Default build (auto-detect LLVM or VS)
+# Default build (uses LLVM/Clang + Ninja)
 python build_deps.py
-
-# Use LLVM/Clang + Ninja
-python build_deps.py --llvm
-
-# Use Visual Studio
-python build_deps.py --vs
 
 # Debug build
 python build_deps.py --build-type Debug
@@ -88,14 +73,9 @@ python build_deps.py --clean
 
 # With Skia tools
 python build_deps.py --skia-tools
-
-# Skip certain dependencies
-python build_deps.py --skip-skia
 ```
 
 **Options:**
-- `--llvm` - Use LLVM/Clang + Ninja
-- `--vs` - Use Visual Studio
 - `--build-type` - Release or Debug (default: Release)
 - `--target-cpu` - x64, x86, arm64 (default: x64)
 - `--skia-tools` - Build Skia tools
@@ -108,7 +88,7 @@ python build_deps.py --skip-skia
 
 ```bash
 # Default build
-python build_windows.py --llvm
+python build_windows.py
 
 # Debug build
 python build_windows.py --build-type Debug
@@ -125,12 +105,12 @@ python build_windows.py --skia-path "C:\libs\skia" --sdl3-path "C:\libs\SDL3"
 
 ### SSL Error in emsdk Download
 
-```bash
-# Skip Skia dependencies
-python sync_deps.py --skip-skia-deps
+This error is common when Skia's git-sync-deps tries to download emsdk:
+```
+Error: Downloading URL '...wasm-binaries.zip': SSL: UNEXPECTED_EOF_WHILE_READING
 ```
 
-emsdk is only needed for WebAssembly builds. Native builds don't need it.
+**Solution:** emsdk is only needed for WebAssembly builds. Native builds don't need it. The sync should still complete successfully.
 
 ### CMake Can't Find Vulkan
 
@@ -142,16 +122,17 @@ set VULKAN_SDK=C:\VulkanSDK\1.3.290.0
 python build_windows.py --vulkan-sdk "C:\VulkanSDK\1.3.290.0"
 ```
 
-### aria2c or 7z Not Found
+### LLVM/Clang Not Found
 
 ```powershell
-winget install aria2
-winget install 7zip.7zip
+winget install LLVM.LLVM
 ```
+
+Ensure LLVM's bin directory is in PATH.
 
 ### Ninja Not Found
 
-Install LLVM which includes Ninja, or:
+Ninja is included with LLVM. If not found:
 ```powershell
 winget install LLVM.LLVM
 ```
