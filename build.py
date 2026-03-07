@@ -1,6 +1,6 @@
 """
 Skia Renderer - Build Main Project
-Builds skia-renderer with LLVM/Clang + Ninja
+Builds skia-renderer with LLVM/Clang + Ninja + sccache
 """
 
 import os
@@ -31,6 +31,7 @@ def find_tool(name: str, extra_paths: list = None) -> str:
 
 def find_llvm() -> tuple:
     """Find LLVM installation"""
+    # Check PATH first
     clang = find_tool("clang")
     if clang:
         clang_path = Path(clang)
@@ -38,11 +39,18 @@ def find_llvm() -> tuple:
         clang_pp = find_tool("clang++", [str(clang_path.parent)])
         return str(llvm_path), clang, clang_pp or str(clang_path.parent / "clang++")
     
+    # Check common Windows paths
     if platform.system() == "Windows":
         for base in [r"C:\Program Files\LLVM", r"C:\LLVM"]:
             llvm_path = Path(base)
             if (llvm_path / "bin" / "clang.exe").exists():
                 return str(llvm_path), str(llvm_path / "bin" / "clang.exe"), str(llvm_path / "bin" / "clang++.exe")
+    
+    # Check common Unix paths
+    for base in ["/usr", "/usr/local", "/opt/homebrew"]:
+        llvm_path = Path(base)
+        if (llvm_path / "bin" / "clang").exists():
+            return str(llvm_path), str(llvm_path / "bin" / "clang"), str(llvm_path / "bin" / "clang++")
     
     return None, None, None
 
@@ -52,14 +60,39 @@ def find_ninja(depot_tools: Path = None) -> str:
     if ninja:
         return ninja
     
-    if depot_tools and (depot_tools / "ninja.exe").exists():
-        return str(depot_tools / "ninja.exe")
+    # Check depot_tools
+    if depot_tools:
+        ninja_exe = "ninja.exe" if platform.system() == "Windows" else "ninja"
+        if (depot_tools / ninja_exe).exists():
+            return str(depot_tools / ninja_exe)
     
+    # Check LLVM bin
     llvm_path, _, _ = find_llvm()
     if llvm_path:
-        ninja_path = Path(llvm_path) / "bin" / "ninja.exe"
+        ninja_exe = "ninja.exe" if platform.system() == "Windows" else "ninja"
+        ninja_path = Path(llvm_path) / "bin" / ninja_exe
         if ninja_path.exists():
             return str(ninja_path)
+    
+    return None
+
+def find_sccache() -> str:
+    """Find sccache executable"""
+    sccache = find_tool("sccache")
+    if sccache:
+        return sccache
+    
+    # Check common paths
+    if platform.system() == "Windows":
+        for base in [r"C:\Program Files\sccache", r"C:\sccache", os.path.expanduser("~\\.cargo\\bin")]:
+            exe = Path(base) / "sccache.exe"
+            if exe.exists():
+                return str(exe)
+    else:
+        for base in ["/usr/local/bin", os.path.expanduser("~/.cargo/bin")]:
+            exe = Path(base) / "sccache"
+            if exe.exists():
+                return str(exe)
     
     return None
 
@@ -101,7 +134,8 @@ def build_project(args):
     llvm_path, clang, clang_pp = find_llvm()
     if not llvm_path:
         print("  ERROR: LLVM/Clang not found")
-        print("  Install LLVM: winget install LLVM.LLVM")
+        print("  Install LLVM: winget install LLVM.LLVM (Windows)")
+        print("  Or: apt install clang (Linux)")
         return 1
     print(f"  [OK] LLVM: {llvm_path}")
     
@@ -110,6 +144,13 @@ def build_project(args):
         print("  ERROR: Ninja not found")
         return 1
     print(f"  [OK] Ninja: {ninja}")
+    
+    # Find sccache (optional)
+    sccache = find_sccache()
+    if sccache:
+        print(f"  [OK] sccache: {sccache}")
+    else:
+        print("  [INFO] sccache not found (optional, speeds up rebuilds)")
     
     print()
     
@@ -129,6 +170,8 @@ def build_project(args):
     print("Configuration:")
     print(f"  Build Type: {args.build_type}")
     print(f"  Generator: Ninja (LLVM/Clang)")
+    if sccache:
+        print(f"  Cache: sccache")
     print()
     
     print("Dependencies:")
@@ -158,6 +201,11 @@ def build_project(args):
         f"-DCMAKE_CXX_COMPILER={clang_pp}",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     ]
+    
+    # Add sccache as compiler launcher
+    if sccache:
+        cmd.append(f"-DCMAKE_C_COMPILER_LAUNCHER={sccache}")
+        cmd.append(f"-DCMAKE_CXX_COMPILER_LAUNCHER={sccache}")
     
     if vulkan_sdk:
         cmd.append(f"-DVULKAN_SDK={vulkan_sdk}")
@@ -198,7 +246,9 @@ def build_project(args):
     print("=" * 50)
     print()
     
-    exe_path = build_dir / "skia-renderer.exe"
+    exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
+    exe_path = build_dir / exe_name
+    
     if exe_path.exists():
         print(f"Executable: {exe_path}")
         print(f"\nRun: {exe_path}")
