@@ -122,6 +122,7 @@ def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
         shutil.rmtree(build_dir, onerror=remove_readonly)
     build_dir.mkdir(parents=True)
     
+    
     # CMake configure
     cmd = [
         "cmake", "-S", str(source_dir), "-B", str(build_dir), 
@@ -131,6 +132,10 @@ def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
         f"-DCMAKE_CXX_COMPILER={clang_pp}",
         f"-DCMAKE_INSTALL_PREFIX={install_dir}",
     ]
+    
+    if platform.system() == "Windows":
+        runtime_lib = "MultiThreaded" if build_type == "Release" else "MultiThreadedDebug"
+        cmd.append(f"-DCMAKE_MSVC_RUNTIME_LIBRARY={runtime_lib}")
     
     # Add sccache as compiler launcher
     if sccache:
@@ -206,6 +211,7 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict,
     bool_args = [
         ("is_official_build", skia_args.get("is_official_build", True)),
         ("is_debug", skia_args.get("is_debug", False)),
+        ("is_component_build", False)
         ("skia_enable_ganesh", skia_args.get("skia_enable_ganesh", True)),
         ("skia_enable_graphite", skia_args.get("skia_enable_graphite", True)),
         ("skia_use_vulkan", skia_args.get("skia_use_vulkan", True)),
