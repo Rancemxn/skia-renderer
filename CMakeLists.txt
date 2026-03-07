@@ -288,6 +288,11 @@ endif()
 # Compiler Flags
 # ========================================
 
+# VMA requires Vulkan version macro for Vulkan 1.3
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    VMA_VULKAN_VERSION=1003000  # Vulkan 1.3
+)
+
 # Detect if using Clang on Windows
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(STATUS "Using Clang on Windows")
