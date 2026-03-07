@@ -285,13 +285,23 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ========================================
+# VMA (Vulkan Memory Allocator) Configuration
+# ========================================
+# VMA requires these macros to be defined BEFORE including vk_mem_alloc.h
+# These MUST match the Vulkan API version used at runtime
+# Vulkan 1.3 is required for Skia Graphite
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    VMA_VULKAN_VERSION=1003000
+    VMA_DEDICATED_ALLOCATION=1
+    VMA_BIND_MEMORY2=1
+    VMA_MEMORY_BUDGET=1
+    VMA_BUFFER_DEVICE_ADDRESS=1
+)
+message(STATUS "VMA configured for Vulkan 1.3")
+
+# ========================================
 # Compiler Flags
 # ========================================
-
-# VMA requires Vulkan version macro for Vulkan 1.3
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    VMA_VULKAN_VERSION=1003000  # Vulkan 1.3
-)
 
 # Detect if using Clang on Windows
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
