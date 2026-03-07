@@ -19,6 +19,7 @@ option(USE_SYSTEM_SKIA "Use system Skia" OFF)
 if(WIN32)
     add_definitions(-DNOMINMAX -DWIN32_LEAN_AND_MEAN)
     set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 # ========================================
@@ -267,7 +268,7 @@ if(MSVC)
         $<$<CONFIG:Debug>:/Od /Zi>
     )
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        set_target_properties(${PROJECT_NAME} PROPERTIES STATIC_RUNTIME_LIBRARY_RELEASE "ON")
+        #set_target_properties(${PROJECT_NAME} PROPERTIES STATIC_RUNTIME_LIBRARY_RELEASE "ON")
         target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
     endif()
 elseif(USING_CLANG_WIN)
@@ -288,6 +289,7 @@ else()
         -Wextra
         -Wpedantic
         -frtti
+        -fPIC
         $<$<CONFIG:Release>:-O3>
         $<$<CONFIG:Debug>:-g -O0>
     )
