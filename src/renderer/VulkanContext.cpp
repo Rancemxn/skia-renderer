@@ -119,12 +119,19 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
+    std::cout << "Instance extensions:" << std::endl;
+    for (const auto& ext : instanceExtensions) {
+        std::cout << "  " << ext << std::endl;
+    }
+
     vkb::InstanceBuilder builder;
     
 #ifdef ENABLE_VULKAN_VALIDATION
     // Enable validation layers in debug builds
+    // Set Vulkan 1.3 as minimum required version for Skia Graphite
     auto instanceResult = builder
         .set_app_name("Skia Renderer")
+        .set_api_version(VK_API_VERSION_1_3)
         .request_validation_layers()
         .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
         .enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)
@@ -133,6 +140,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     // Release build - no validation layers
     auto instanceResult = builder
         .set_app_name("Skia Renderer")
+        .set_api_version(VK_API_VERSION_1_3)
         .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
         .build();
 #endif
@@ -182,10 +190,19 @@ bool VulkanContext::createDevice() {
     vkb::PhysicalDevice vkbPhysicalDevice = physicalDeviceResult.value();
     m_deviceInfo.physicalDevice = vkbPhysicalDevice.physical_device;
 
-    // Store device name
+    // Store device properties
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(m_deviceInfo.physicalDevice, &props);
     m_deviceName = props.deviceName;
+    
+    // Print device info
+    uint32_t apiVersion = props.apiVersion;
+    std::cout << "Physical Device: " << props.deviceName << std::endl;
+    std::cout << "  API Version: " 
+              << VK_API_VERSION_MAJOR(apiVersion) << "."
+              << VK_API_VERSION_MINOR(apiVersion) << "."
+              << VK_API_VERSION_PATCH(apiVersion) << std::endl;
+    std::cout << "  Driver Version: " << props.driverVersion << std::endl;
 
     // Enable Vulkan 1.3 features required for Graphite
     VkPhysicalDeviceVulkan13Features vulkan13Features{};
@@ -219,6 +236,9 @@ bool VulkanContext::createDevice() {
     m_deviceInfo.presentQueue = presentQueueResult.value();
     m_deviceInfo.graphicsFamilyIndex = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
     m_deviceInfo.presentFamilyIndex = vkbDevice.get_queue_index(vkb::QueueType::present).value();
+
+    std::cout << "  Graphics Queue Family: " << m_deviceInfo.graphicsFamilyIndex << std::endl;
+    std::cout << "  Present Queue Family: " << m_deviceInfo.presentFamilyIndex << std::endl;
 
     return true;
 }
