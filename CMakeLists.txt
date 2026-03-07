@@ -246,28 +246,48 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${LINK_LIBS})
 # ========================================
 # Compiler Flags
 # ========================================
-target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /utf-8>
-    $<$<CXX_COMPILER_ID:MSVC>:$<$<CONFIG:Release>:/O2 /GL>>
-    $<$<CXX_COMPILER_ID:MSVC>:$<$<CONFIG:Debug>:/Od /Zi>>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:$<$<CONFIG:Release>:-O3>>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:$<$<CONFIG:Debug>:-g -O0>>
-)
 
-# Enable RTTI for Skia compatibility
-if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /GR /EHsc)
-else()
-    target_compile_options(${PROJECT_NAME} PRIVATE -frtti)
+# Detect if using Clang on Windows
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    message(STATUS "Using Clang on Windows")
+    set(USING_CLANG_WIN TRUE)
 endif()
 
-# ========================================
-# Link Time Optimization (Release)
-# ========================================
-if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Release")
-    set_target_properties(${PROJECT_NAME} PROPERTIES STATIC_RUNTIME_LIBRARY_RELEASE "ON")
-    target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/LTCG>)
+if(MSVC)
+    # MSVC flags
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        /W4
+        /utf-8
+        /GR
+        /EHsc
+        $<$<CONFIG:Release>:/O2 /GL>
+        $<$<CONFIG:Debug>:/Od /Zi>
+    )
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        set_target_properties(${PROJECT_NAME} PROPERTIES STATIC_RUNTIME_LIBRARY_RELEASE "ON")
+        target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
+    endif()
+elseif(USING_CLANG_WIN)
+    # Clang on Windows
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -frtti
+        -fexceptions
+        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:Debug>:-g -O0>
+    )
+else()
+    # GCC or Clang on Unix
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -frtti
+        $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:Debug>:-g -O0>
+    )
 endif()
 
 # ========================================

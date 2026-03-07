@@ -20,6 +20,7 @@ set "SKIP_VKBOOTSTRAP=0"
 set "SKIP_VMA=0"
 set "SKIP_SKIA_DEPS=0"
 set "PYTHON_EXE="
+set "SDL_SOURCE=1"
 
 REM ========================================
 REM Parse Arguments
@@ -42,6 +43,7 @@ if /i "%~1"=="--python" (
     set "PYTHON_EXE=%~2"
     shift
 )
+if /i "%~1"=="--sdl-prebuilt" set "SDL_SOURCE=0"
 if /i "%~1"=="--help" (
     goto :show_help
 )
@@ -62,11 +64,12 @@ echo   --skip-skia         Skip Skia download
 echo   --skip-sdl          Skip SDL3 download
 echo   --skip-vkbootstrap  Skip vk-bootstrap download
 echo   --skip-vma          Skip VMA download
-echo   --skip-skia-deps    Skip Skia dependencies sync (use if it fails)
+echo   --skip-skia-deps    Skip Skia dependencies sync
 echo   --no-overwrite      Don't overwrite existing files
 echo   --mirror            Use Chinese mirrors
 echo   --proxy URL         Use proxy (e.g., http://127.0.0.1:7890)
 echo   --python PATH       Python executable path
+echo   --sdl-prebuilt      Download prebuilt SDL3 (no compilation needed)
 echo   --help              Show this help
 exit /b 0
 
@@ -89,15 +92,13 @@ where aria2c >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo ERROR: aria2c not found in PATH.
     echo Install: winget install aria2
-    echo Or download: https://github.com/aria2/aria2/releases
     exit /b 1
 )
-echo [OK] aria2c found
+echo [OK] aria2c
 
 REM Check 7z
 where 7z >nul 2>&1
 if %ERRORLEVEL% neq 0 (
-    REM Try common paths
     if exist "C:\Program Files\7-Zip\7z.exe" (
         set "SEVENZIP=C:\Program Files\7-Zip\7z.exe"
     ) else if exist "C:\Program Files (x86)\7-Zip\7z.exe" (
@@ -110,7 +111,7 @@ if %ERRORLEVEL% neq 0 (
 ) else (
     set "SEVENZIP=7z"
 )
-echo [OK] 7z found
+echo [OK] 7z
 
 REM Check Python
 if defined PYTHON_EXE (
@@ -124,11 +125,10 @@ if defined PYTHON_EXE (
     where python >nul 2>&1
     if %ERRORLEVEL% neq 0 (
         echo ERROR: Python not found.
-        echo Install Python 3.8+ and add to PATH
         exit /b 1
     )
     set "PYTHON_EXE=python"
-    echo [OK] Python found
+    echo [OK] Python
 )
 
 REM Check git
@@ -137,14 +137,11 @@ if %ERRORLEVEL% neq 0 (
     echo ERROR: git not found.
     exit /b 1
 )
-echo [OK] git found
+echo [OK] git
 
 echo.
 
-REM ========================================
-REM Create Directories
-REM ========================================
-
+REM Create directories
 if not exist "%DEPS_DIR%" mkdir "%DEPS_DIR%"
 if not exist "%DOWNLOADS_DIR%" mkdir "%DOWNLOADS_DIR%"
 
@@ -158,63 +155,6 @@ if defined PROXY (
 echo.
 
 REM ========================================
-REM Download Functions
-REM ========================================
-
-REM Download and extract function
-REM Usage: call :download_extract "URL" "FILENAME" "EXTRACT_DIR" "STRIP_COMPONENTS"
-goto :skip_functions
-
-:download_extract
-set "DL_URL=%~1"
-set "DL_FILE=%~2"
-set "DL_DIR=%~3"
-set "DL_STRIP=%~4"
-
-echo Downloading: %DL_FILE%
-
-aria2c %ARIA2_OPTS% -d "%DOWNLOADS_DIR%" -o "%DL_FILE%" "%DL_URL%"
-
-if not exist "%DOWNLOADS_DIR%\%DL_FILE%" (
-    echo ERROR: Failed to download %DL_FILE%
-    exit /b 1
-)
-
-REM Extract
-if exist "%DL_DIR%" (
-    if "%FORCE_OVERWRITE%"=="1" (
-        echo Removing existing: %DL_DIR%
-        rmdir /s /q "%DL_DIR%" 2>nul
-    )
-)
-
-echo Extracting: %DL_FILE%
-if "%DL_STRIP%"=="0" (
-    "%SEVENZIP%" x -y -o"%DL_DIR%" "%DOWNLOADS_DIR%\%DL_FILE%"
-) else (
-    REM Extract to temp then move
-    set "TEMP_DIR=%DL_DIR%_temp"
-    if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
-    mkdir "!TEMP_DIR!"
-    "%SEVENZIP%" x -y -o"!TEMP_DIR!" "%DOWNLOADS_DIR%\%DL_FILE%"
-    
-    REM Move contents up by strip components
-    set "SRC_DIR=!TEMP_DIR!"
-    for /L %%i in (1,1,%DL_STRIP%) do (
-        for /d %%d in ("!SRC_DIR!\*") do set "SRC_DIR=%%d"
-    )
-    
-    mkdir "%DL_DIR%" 2>nul
-    xcopy /e /i /y "!SRC_DIR!\*" "%DL_DIR%\"
-    rmdir /s /q "!TEMP_DIR!"
-)
-
-echo [OK] %DL_FILE% done
-exit /b 0
-
-:skip_functions
-
-REM ========================================
 REM 1. SDL3
 REM ========================================
 
@@ -223,7 +163,6 @@ if "%SKIP_SDL%"=="1" (
     goto :sdl_done
 )
 
-echo.
 echo ========================================
 echo [1/4] SDL3
 echo ========================================
@@ -241,25 +180,58 @@ if exist "%SDL_DIR%" (
     )
 )
 
-set "SDL_URL=https://github.com/libsdl-org/SDL/releases/download/release-%SDL_VERSION%/SDL3-devel-%SDL_VERSION%-VC.zip"
-if "%USE_MIRROR%"=="1" (
-    set "SDL_URL=https://ghp.ci/https://github.com/libsdl-org/SDL/releases/download/release-%SDL_VERSION%/SDL3-devel-%SDL_VERSION%-VC.zip"
-)
-
-call :download_extract "%SDL_URL%" "SDL3-devel-%SDL_VERSION%-VC.zip" "%SDL_DIR%" 1
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: SDL3 download failed
-    goto :sdl_done
-)
-
-REM Rename SDL3-3.4.2 to SDL3
-if exist "%SDL_DIR%\SDL3-%SDL_VERSION%" (
-    move "%SDL_DIR%\SDL3-%SDL_VERSION%" "%SDL_DIR%_tmp"
-    rmdir "%SDL_DIR%"
-    move "%SDL_DIR%_tmp" "%SDL_DIR%"
+if "%SDL_SOURCE%"=="1" (
+    REM Download source code for compilation
+    set "SDL_URL=https://github.com/libsdl-org/SDL/archive/refs/tags/release-%SDL_VERSION%.zip"
+    if "%USE_MIRROR%"=="1" (
+        set "SDL_URL=https://ghp.ci/https://github.com/libsdl-org/SDL/archive/refs/tags/release-%SDL_VERSION%.zip"
+    )
+    
+    echo Downloading SDL3 source...
+    aria2c %ARIA2_OPTS% -d "%DOWNLOADS_DIR%" -o "SDL3-%SDL_VERSION%-src.zip" "!SDL_URL!"
+    
+    if exist "%DOWNLOADS_DIR%\SDL3-%SDL_VERSION%-src.zip" (
+        echo Extracting...
+        set "TEMP_DIR=%SDL_DIR%_temp"
+        if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
+        mkdir "!TEMP_DIR!"
+        "%SEVENZIP%" x -y -o"!TEMP_DIR!" "%DOWNLOADS_DIR%\SDL3-%SDL_VERSION%-src.zip"
+        
+        REM Move SDL-release-3.4.2 to SDL3
+        for /d %%d in ("!TEMP_DIR!\SDL-release-*") do (
+            move "%%d" "%SDL_DIR%"
+        )
+        rmdir /s /q "!TEMP_DIR!"
+        echo [OK] SDL3 source extracted
+    )
+) else (
+    REM Download prebuilt binaries
+    set "SDL_URL=https://github.com/libsdl-org/SDL/releases/download/release-%SDL_VERSION%/SDL3-devel-%SDL_VERSION%-VC.zip"
+    if "%USE_MIRROR%"=="1" (
+        set "SDL_URL=https://ghp.ci/https://github.com/libsdl-org/SDL/releases/download/release-%SDL_VERSION%/SDL3-devel-%SDL_VERSION%-VC.zip"
+    )
+    
+    echo Downloading SDL3 prebuilt...
+    aria2c %ARIA2_OPTS% -d "%DOWNLOADS_DIR%" -o "SDL3-%SDL_VERSION%-VC.zip" "!SDL_URL!"
+    
+    if exist "%DOWNLOADS_DIR%\SDL3-%SDL_VERSION%-VC.zip" (
+        echo Extracting...
+        set "TEMP_DIR=%SDL_DIR%_temp"
+        if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
+        mkdir "!TEMP_DIR!"
+        "%SEVENZIP%" x -y -o"!TEMP_DIR!" "%DOWNLOADS_DIR%\SDL3-%SDL_VERSION%-VC.zip"
+        
+        REM Move SDL3-3.4.2 to SDL3
+        for /d %%d in ("!TEMP_DIR!\SDL3-*") do (
+            move "%%d" "%SDL_DIR%"
+        )
+        rmdir /s /q "!TEMP_DIR!"
+        echo [OK] SDL3 prebuilt extracted
+    )
 )
 
 :sdl_done
+echo.
 
 REM ========================================
 REM 2. vk-bootstrap
@@ -270,7 +242,6 @@ if "%SKIP_VKBOOTSTRAP%"=="1" (
     goto :vkbootstrap_done
 )
 
-echo.
 echo ========================================
 echo [2/4] vk-bootstrap
 echo ========================================
@@ -293,20 +264,25 @@ if "%USE_MIRROR%"=="1" (
     set "VKBOOTSTRAP_URL=https://ghp.ci/https://github.com/charles-lunarg/vk-bootstrap/archive/refs/tags/v%VKBOOTSTRAP_VERSION%.zip"
 )
 
-call :download_extract "%VKBOOTSTRAP_URL%" "vk-bootstrap-%VKBOOTSTRAP_VERSION%.zip" "%VKBOOTSTRAP_DIR%" 1
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: vk-bootstrap download failed
-    goto :vkbootstrap_done
-)
+echo Downloading vk-bootstrap...
+aria2c %ARIA2_OPTS% -d "%DOWNLOADS_DIR%" -o "vk-bootstrap-%VKBOOTSTRAP_VERSION%.zip" "%VKBOOTSTRAP_URL%"
 
-REM Rename to standard name
-if exist "%VKBOOTSTRAP_DIR%\vk-bootstrap-%VKBOOTSTRAP_VERSION%" (
-    move "%VKBOOTSTRAP_DIR%\vk-bootstrap-%VKBOOTSTRAP_VERSION%" "%VKBOOTSTRAP_DIR%_tmp"
-    rmdir "%VKBOOTSTRAP_DIR%"
-    move "%VKBOOTSTRAP_DIR%_tmp" "%VKBOOTSTRAP_DIR%"
+if exist "%DOWNLOADS_DIR%\vk-bootstrap-%VKBOOTSTRAP_VERSION%.zip" (
+    echo Extracting...
+    set "TEMP_DIR=%VKBOOTSTRAP_DIR%_temp"
+    if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
+    mkdir "!TEMP_DIR!"
+    "%SEVENZIP%" x -y -o"!TEMP_DIR!" "%DOWNLOADS_DIR%\vk-bootstrap-%VKBOOTSTRAP_VERSION%.zip"
+    
+    for /d %%d in ("!TEMP_DIR!\vk-bootstrap-*") do (
+        move "%%d" "%VKBOOTSTRAP_DIR%"
+    )
+    rmdir /s /q "!TEMP_DIR!"
+    echo [OK] vk-bootstrap
 )
 
 :vkbootstrap_done
+echo.
 
 REM ========================================
 REM 3. VulkanMemoryAllocator
@@ -317,7 +293,6 @@ if "%SKIP_VMA%"=="1" (
     goto :vma_done
 )
 
-echo.
 echo ========================================
 echo [3/4] VulkanMemoryAllocator
 echo ========================================
@@ -327,10 +302,10 @@ set "VMA_DIR=%DEPS_DIR%\VulkanMemoryAllocator"
 
 if exist "%VMA_DIR%" (
     if "%FORCE_OVERWRITE%"=="1" (
-        echo Removing existing VulkanMemoryAllocator...
+        echo Removing existing VMA...
         rmdir /s /q "%VMA_DIR%"
     ) else (
-        echo VulkanMemoryAllocator already exists, skipping.
+        echo VMA already exists, skipping.
         goto :vma_done
     )
 )
@@ -340,20 +315,25 @@ if "%USE_MIRROR%"=="1" (
     set "VMA_URL=https://ghp.ci/https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v%VMA_VERSION%.zip"
 )
 
-call :download_extract "%VMA_URL%" "VMA-%VMA_VERSION%.zip" "%VMA_DIR%" 1
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: VMA download failed
-    goto :vma_done
-)
+echo Downloading VMA...
+aria2c %ARIA2_OPTS% -d "%DOWNLOADS_DIR%" -o "VMA-%VMA_VERSION%.zip" "%VMA_URL%"
 
-REM Rename to standard name
-if exist "%VMA_DIR%\VulkanMemoryAllocator-%VMA_VERSION%" (
-    move "%VMA_DIR%\VulkanMemoryAllocator-%VMA_VERSION%" "%VMA_DIR%_tmp"
-    rmdir "%VMA_DIR%"
-    move "%VMA_DIR%_tmp" "%VMA_DIR%"
+if exist "%DOWNLOADS_DIR%\VMA-%VMA_VERSION%.zip" (
+    echo Extracting...
+    set "TEMP_DIR=%VMA_DIR%_temp"
+    if exist "!TEMP_DIR!" rmdir /s /q "!TEMP_DIR!"
+    mkdir "!TEMP_DIR!"
+    "%SEVENZIP%" x -y -o"!TEMP_DIR!" "%DOWNLOADS_DIR%\VMA-%VMA_VERSION%.zip"
+    
+    for /d %%d in ("!TEMP_DIR!\VulkanMemoryAllocator-*") do (
+        move "%%d" "%VMA_DIR%"
+    )
+    rmdir /s /q "!TEMP_DIR!"
+    echo [OK] VMA
 )
 
 :vma_done
+echo.
 
 REM ========================================
 REM 4. Skia
@@ -364,7 +344,6 @@ if "%SKIP_SKIA%"=="1" (
     goto :skia_done
 )
 
-echo.
 echo ========================================
 echo [4/4] Skia
 echo ========================================
@@ -381,6 +360,12 @@ if not exist "%DEPOT_TOOLS_DIR%" (
         git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "%DEPOT_TOOLS_DIR%"
     )
 )
+
+REM Initialize depot_tools
+echo Initializing depot_tools...
+cd /d "%DEPOT_TOOLS_DIR%"
+call update_depot_tools.bat 2>nul
+cd /d "%SCRIPT_DIR%"
 
 REM Add depot_tools to PATH
 set "PATH=%DEPOT_TOOLS_DIR%;%PATH%"
@@ -403,15 +388,6 @@ if "%USE_MIRROR%"=="1" (
     git clone --depth 1 https://skia.googlesource.com/skia.git "%SKIA_DIR%"
 )
 
-if not exist "%SKIA_DIR%" (
-    echo ERROR: Failed to clone Skia
-    goto :skia_done
-)
-
-REM Checkout specific version (optional)
-cd /d "%SKIA_DIR%"
-REM git checkout chrome/m146
-
 :skia_deps
 
 if "%SKIP_SKIA_DEPS%"=="1" (
@@ -421,28 +397,19 @@ if "%SKIP_SKIA_DEPS%"=="1" (
 
 echo.
 echo Syncing Skia dependencies...
-echo This may take a while...
-echo.
-
 cd /d "%SKIA_DIR%"
 
-REM Sync dependencies with Python
+REM Sync dependencies
 "%PYTHON_EXE%" tools/git-sync-deps
 
 if %ERRORLEVEL% neq 0 (
     echo.
     echo WARNING: Skia dependencies sync had errors.
-    echo This might be due to emsdk SSL issues (not needed for native builds).
-    echo.
-    echo Try running with --skip-skia-deps to skip this step.
+    echo Try: sync_deps.bat --skip-skia-deps
     echo.
 )
 
 :skia_done
-
-REM ========================================
-REM Summary
-REM ========================================
 
 echo.
 echo ========================================
@@ -456,9 +423,7 @@ if exist "%DEPS_DIR%\VulkanMemoryAllocator" echo   [OK] VulkanMemoryAllocator
 if exist "%DEPS_DIR%\skia" echo   [OK] Skia
 if exist "%DEPS_DIR%\depot_tools" echo   [OK] depot_tools
 echo.
-echo Next steps:
-echo   1. Run build_deps.bat to compile dependencies
-echo   2. Run build_windows.bat to build the project
+echo Next: Run build_deps.bat to compile dependencies
 echo.
 
 cd /d "%SCRIPT_DIR%"

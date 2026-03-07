@@ -14,6 +14,8 @@ set "CLEAN=0"
 set "BUILD_TYPE=Release"
 set "USE_MIRROR=0"
 set "PROXY="
+set "USE_LLVM=1"
+set "LLVM_PATH="
 
 REM ========================================
 REM Parse Arguments
@@ -28,6 +30,16 @@ if /i "%~1"=="--clean" set "CLEAN=1"
 if /i "%~1"=="--mirror" set "USE_MIRROR=1"
 if /i "%~1"=="--build-type" ( set "BUILD_TYPE=%~2" & shift )
 if /i "%~1"=="--proxy" ( set "PROXY=%~2" & shift )
+if /i "%~1"=="--llvm" (
+    set "USE_LLVM=1"
+    if not "%~2"=="" (
+        if not "%~2:~0,2%"=="--" (
+            set "LLVM_PATH=%~2"
+            shift
+        )
+    )
+)
+if /i "%~1"=="--vs" set "USE_LLVM=0"
 
 if /i "%~1"=="--help" (
     echo ========================================
@@ -36,17 +48,22 @@ if /i "%~1"=="--help" (
     echo.
     echo Usage: %~nx0 [options]
     echo.
-    echo Options:
-    echo   --skip-sync    Skip dependency download
-    echo   --skip-deps    Skip dependency build
-    echo   --clean        Clean before building
-    echo   --mirror       Use Chinese mirrors
-    echo   --build-type   Release or Debug (default: Release)
-    echo   --proxy URL    Use proxy for downloads
-    echo   --help         Show this help
+    echo Compiler Options:
+    echo   --llvm [PATH]    Use LLVM/Clang + Ninja (default)
+    echo   --vs             Use Visual Studio instead
+    echo.
+    echo Build Options:
+    echo   --skip-sync      Skip dependency download
+    echo   --skip-deps      Skip dependency build
+    echo   --clean          Clean before building
+    echo   --build-type     Release or Debug (default: Release)
+    echo.
+    echo Download Options:
+    echo   --mirror         Use Chinese mirrors
+    echo   --proxy URL      Use proxy for downloads
     echo.
     echo Prerequisites:
-    echo   - Visual Studio 2022 with C++ workload
+    echo   - LLVM/Clang + Ninja OR Visual Studio 2022
     echo   - CMake 3.20+
     echo   - aria2 (winget install aria2)
     echo   - 7-Zip (winget install 7zip.7zip)
@@ -67,8 +84,10 @@ echo.
 echo Options:
 echo   Build Type: %BUILD_TYPE%
 echo   Clean: %CLEAN%
+echo   Use LLVM: %USE_LLVM%
+if defined LLVM_PATH echo   LLVM Path: %LLVM_PATH%
 echo   Use Mirror: %USE_MIRROR%
-echo   Proxy: %PROXY%
+if defined PROXY echo   Proxy: %PROXY%
 echo.
 
 REM ========================================
@@ -80,7 +99,6 @@ if "%SKIP_SYNC%"=="1" (
     goto :step2
 )
 
-echo.
 echo ========================================
 echo [Step 1/3] Syncing dependencies...
 echo ========================================
@@ -107,7 +125,6 @@ if "%SKIP_DEPS%"=="1" (
     goto :step3
 )
 
-echo.
 echo ========================================
 echo [Step 2/3] Building dependencies...
 echo ========================================
@@ -115,6 +132,10 @@ echo.
 
 set "DEPS_ARGS=--build-type %BUILD_TYPE%"
 if "%CLEAN%"=="1" set "DEPS_ARGS=%DEPS_ARGS% --clean"
+if "%USE_LLVM%"=="1" (
+    set "DEPS_ARGS=%DEPS_ARGS% --llvm"
+    if defined LLVM_PATH set "DEPS_ARGS=%DEPS_ARGS% %LLVM_PATH%"
+)
 
 call "%SCRIPT_DIR%build_deps.bat" %DEPS_ARGS%
 if %ERRORLEVEL% neq 0 (
@@ -128,7 +149,6 @@ REM ========================================
 REM Step 3: Build Main Project
 REM ========================================
 
-echo.
 echo ========================================
 echo [Step 3/3] Building main project...
 echo ========================================
@@ -136,6 +156,10 @@ echo.
 
 set "BUILD_ARGS=--build-type %BUILD_TYPE%"
 if "%CLEAN%"=="1" set "BUILD_ARGS=%BUILD_ARGS% --clean"
+if "%USE_LLVM%"=="1" (
+    set "BUILD_ARGS=%BUILD_ARGS% --llvm"
+    if defined LLVM_PATH set "BUILD_ARGS=%BUILD_ARGS% %LLVM_PATH%"
+)
 
 call "%SCRIPT_DIR%build_windows.bat" %BUILD_ARGS%
 if %ERRORLEVEL% neq 0 (
@@ -147,12 +171,17 @@ REM ========================================
 REM Done
 REM ========================================
 
-echo.
 echo ========================================
 echo Build Complete!
 echo ========================================
 echo.
-echo Run: build\%BUILD_TYPE%\skia-renderer.exe
+
+if "%USE_LLVM%"=="1" (
+    echo Run: build\skia-renderer.exe
+) else (
+    echo Run: build\%BUILD_TYPE%\skia-renderer.exe
+)
+
 echo.
 
 endlocal
