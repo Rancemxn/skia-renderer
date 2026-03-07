@@ -206,6 +206,7 @@ add_executable(${PROJECT_NAME}
     src/renderer/VulkanContext.cpp
     src/renderer/SkiaRenderer.cpp
     src/renderer/Swapchain.cpp
+    src/renderer/VulkanAllocator.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

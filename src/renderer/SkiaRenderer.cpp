@@ -1,5 +1,6 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
+#include "VulkanAllocator.h"
 
 // Skia core headers
 #include "include/core/SkSurface.h"
@@ -33,6 +34,7 @@ struct SkiaRenderer::Impl {
     sk_sp<SkSurface> surface;
     skgpu::VulkanExtensions vkExtensions;
     VkPhysicalDeviceFeatures physicalDeviceFeatures{};
+    sk_sp<VulkanAllocator> vulkanAllocator;
 };
 
 SkiaRenderer::SkiaRenderer() : m_impl(std::make_unique<Impl>()) {}
@@ -69,6 +71,7 @@ void SkiaRenderer::shutdown() {
     m_impl->surface.reset();
     m_impl->recorder.reset();
     m_impl->graphiteContext.reset();
+    m_impl->vulkanAllocator.reset();
 
     m_initialized = false;
     std::cout << "Skia Graphite renderer shut down." << std::endl;
@@ -134,6 +137,15 @@ bool SkiaRenderer::createSkiaContext() {
         deviceExtensions
     );
 
+    // Create VMA-based memory allocator
+    std::cout << "  Creating VMA memory allocator..." << std::endl;
+    m_impl->vulkanAllocator = sk_make_sp<VulkanAllocator>(
+        m_context->getInstance(),
+        m_context->getPhysicalDevice(),
+        m_context->getDevice(),
+        VK_API_VERSION_1_3
+    );
+
     // Create Skia Vulkan backend context
     skgpu::VulkanBackendContext backendContext{};
     
@@ -149,6 +161,9 @@ bool SkiaRenderer::createSkiaContext() {
     // Set extensions and features
     backendContext.fVkExtensions = &m_impl->vkExtensions;
     backendContext.fDeviceFeatures = &m_impl->physicalDeviceFeatures;
+    
+    // Set memory allocator
+    backendContext.fMemoryAllocator = m_impl->vulkanAllocator;
     
     backendContext.fGetProc = getProc;
 
