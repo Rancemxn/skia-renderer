@@ -114,13 +114,28 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     // Add required extensions for Skia Graphite
     instanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 
+#ifdef ENABLE_VULKAN_VALIDATION
+    // Add debug utils extension for validation layers
+    instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
+
     vkb::InstanceBuilder builder;
     
+#ifdef ENABLE_VULKAN_VALIDATION
+    // Enable validation layers in debug builds
     auto instanceResult = builder
         .set_app_name("Skia Renderer")
         .request_validation_layers()
         .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
+        .enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)
         .build();
+#else
+    // Release build - no validation layers
+    auto instanceResult = builder
+        .set_app_name("Skia Renderer")
+        .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
+        .build();
+#endif
 
     if (!instanceResult) {
         std::cerr << "Failed to create Vulkan instance: " 

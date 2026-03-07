@@ -76,11 +76,22 @@ else()
             HINTS "${VKBOOTSTRAP_DIR}/include" 
                   "${VKBOOTSTRAP_DIR}/include/vk-bootstrap"
             PATH_SUFFIXES vk-bootstrap)
-        find_library(VK_BOOTSTRAP_LIBRARY 
-            NAMES vk-bootstrap vk-bootstrap-static 
-            HINTS "${VKBOOTSTRAP_DIR}/lib" 
-                  "${VKBOOTSTRAP_DIR}/lib/${CMAKE_BUILD_TYPE}"
-            PATH_SUFFIXES Release Debug)
+        # Prioritize based on build type
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            find_library(VK_BOOTSTRAP_LIBRARY 
+                NAMES vk-bootstrap vk-bootstrap-static 
+                HINTS "${VKBOOTSTRAP_DIR}/lib/Debug" 
+                      "${VKBOOTSTRAP_DIR}/lib"
+                      "${VKBOOTSTRAP_DIR}/lib/${CMAKE_BUILD_TYPE}"
+                PATH_SUFFIXES Debug Release)
+        else()
+            find_library(VK_BOOTSTRAP_LIBRARY 
+                NAMES vk-bootstrap vk-bootstrap-static 
+                HINTS "${VKBOOTSTRAP_DIR}/lib/Release" 
+                      "${VKBOOTSTRAP_DIR}/lib"
+                      "${VKBOOTSTRAP_DIR}/lib/${CMAKE_BUILD_TYPE}"
+                PATH_SUFFIXES Release Debug)
+        endif()
     elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap")
         find_path(VK_BOOTSTRAP_INCLUDE_DIR 
             NAMES VkBootstrap.h 
@@ -144,12 +155,26 @@ else()
     if(DEFINED SKIA_DIR)
         # Skia headers are in the root directory
         set(SKIA_INCLUDE_DIR "${SKIA_DIR}")
-        find_library(SKIA_LIBRARY NAMES skia HINTS "${SKIA_DIR}/out/Release" "${SKIA_DIR}/out/Debug")
+        # Prioritize based on build type
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            find_library(SKIA_LIBRARY NAMES skia 
+                HINTS "${SKIA_DIR}/out/Debug" "${SKIA_DIR}/out/Release")
+        else()
+            find_library(SKIA_LIBRARY NAMES skia 
+                HINTS "${SKIA_DIR}/out/Release" "${SKIA_DIR}/out/Debug")
+        endif()
     else()
         set(SKIA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/deps/skia")
-        find_library(SKIA_LIBRARY NAMES skia 
-            HINTS "${CMAKE_SOURCE_DIR}/deps/skia/out/Release" 
-                  "${CMAKE_SOURCE_DIR}/deps/skia/out/Debug")
+        # Prioritize based on build type
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            find_library(SKIA_LIBRARY NAMES skia 
+                HINTS "${CMAKE_SOURCE_DIR}/deps/skia/out/Debug" 
+                      "${CMAKE_SOURCE_DIR}/deps/skia/out/Release")
+        else()
+            find_library(SKIA_LIBRARY NAMES skia 
+                HINTS "${CMAKE_SOURCE_DIR}/deps/skia/out/Release" 
+                      "${CMAKE_SOURCE_DIR}/deps/skia/out/Debug")
+        endif()
     endif()
 endif()
 message(STATUS "Skia Include: ${SKIA_INCLUDE_DIR}")
@@ -248,6 +273,17 @@ endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE ${LINK_LIBS})
 
 # ========================================
+# Debug Definitions
+# ========================================
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        DEBUG_BUILD
+        ENABLE_VULKAN_VALIDATION
+    )
+    message(STATUS "Debug build: Vulkan validation enabled")
+endif()
+
+# ========================================
 # Compiler Flags
 # ========================================
 
@@ -300,10 +336,17 @@ endif()
 # RPATH for Unix
 # ========================================
 if(NOT WIN32)
-    set_target_properties(${PROJECT_NAME} PROPERTIES
-        BUILD_RPATH "${CMAKE_SOURCE_DIR}/deps/SDL3/lib;${CMAKE_SOURCE_DIR}/deps/skia/out/Release"
-        INSTALL_RPATH "$ORIGIN"
-    )
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+            BUILD_RPATH "${CMAKE_SOURCE_DIR}/deps/SDL3/lib;${CMAKE_SOURCE_DIR}/deps/skia/out/Debug"
+            INSTALL_RPATH "$ORIGIN"
+        )
+    else()
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+            BUILD_RPATH "${CMAKE_SOURCE_DIR}/deps/SDL3/lib;${CMAKE_SOURCE_DIR}/deps/skia/out/Release"
+            INSTALL_RPATH "$ORIGIN"
+        )
+    endif()
 endif()
 
 # ========================================
