@@ -4,118 +4,176 @@ A high-performance 2D rendering application using **SDL3**, **Skia Graphite**, *
 
 ## Features
 
-- Modern Vulkan 1.3 rendering backend
-- Skia Graphite for hardware-accelerated 2D graphics
-- SDL3 for cross-platform window management
-- vk-bootstrap for easy Vulkan initialization
-- VMA (Vulkan Memory Allocator) for efficient memory management
-- C++20 with clean architecture
+- 🎨 Modern Vulkan 1.3 rendering backend
+- ⚡ Skia Graphite for hardware-accelerated 2D graphics
+- 🖼️ SDL3 for cross-platform window management
+- 🔧 vk-bootstrap for easy Vulkan initialization
+- 💾 VMA (Vulkan Memory Allocator) for efficient memory management
+- 📦 C++20 with clean architecture
+- 🛠️ Flexible build scripts with extensive customization options
+
+## Quick Start
+
+### Windows (One-Click Build)
+
+```cmd
+REM Prerequisites: VS2022, CMake, aria2, Git
+build_all.bat
+```
+
+### Step-by-Step
+
+```cmd
+REM 1. Download dependencies
+sync_deps.bat
+
+REM 2. Build dependencies  
+build_deps.bat
+
+REM 3. Build main project
+build_windows.bat
+```
+
+See [QUICKSTART.md](QUICKSTART.md) for detailed options.
 
 ## Requirements
 
-- CMake 3.20+
-- C++20 compiler (LLVM Clang 22+, GCC 12+, or MSVC 2022+)
-- Vulkan SDK 1.3+
-- Git
+| Tool | Version | Notes |
+|------|---------|-------|
+| Visual Studio | 2022+ | With C++ development workload |
+| CMake | 3.20+ | Build system |
+| Vulkan SDK | 1.3+ | Graphics API |
+| Git | Latest | For cloning repos |
+| aria2 | Latest | Fast parallel downloads |
+| Python | 3.8+ | For Skia build |
 
-## Dependencies
+## Build Scripts
 
-The project requires the following libraries to be built and placed in the `deps/` directory:
+| Script | Description |
+|--------|-------------|
+| `build_all.bat` | One-click complete build |
+| `sync_deps.bat` | Download all dependencies with aria2 |
+| `build_deps.bat` | Build SDL3, vk-bootstrap, VMA, Skia |
+| `build_windows.bat` | Build main project |
+| `build_unix.sh` | Build script for Linux/macOS |
 
-| Library | Version | Path |
-|---------|---------|------|
-| SDL3 | 3.4.2+ | `deps/SDL3/` |
-| vk-bootstrap | 1.4.343+ | `deps/vk-bootstrap/` |
-| VulkanMemoryAllocator | 3.3.0+ | `deps/VulkanMemoryAllocator/` |
-| Skia | chrome/m146 | `deps/skia/` |
+## Customizing Builds
 
-### Building Dependencies
+### Skia Options
 
-#### SDL3
-```bash
-git clone --depth 1 --branch release-3.4.2 https://github.com/libsdl-org/SDL.git deps/SDL3-src
-cd deps/SDL3-src
-mkdir build && cd build
-cmake .. -DSDL_X11_XTEST=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
-cmake --install . --prefix ../SDL3
+```cmd
+REM Enable Skia tools for debugging
+build_deps.bat --skia-enable-tools true
+
+REM Use LLVM Clang compiler
+build_deps.bat --skia-clang-win "C:/Program Files/LLVM"
+
+REM Build for ARM64
+build_deps.bat --skia-target-cpu arm64
+
+REM Full custom args
+cd deps\skia
+bin\gn gen out/Release --args="target_cpu=\"x64\" clang_win=\"C:/Program Files/LLVM\" is_official_build=true skia_enable_graphite=true skia_use_vulkan=true"
 ```
 
-#### vk-bootstrap
-```bash
-git clone --depth 1 --branch v1.4.343 https://github.com/charles-lunarg/vk-bootstrap.git deps/vk-bootstrap-src
-cd deps/vk-bootstrap-src
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
-# Copy include and lib to deps/vk-bootstrap/
+### SDL3 Options
+
+```cmd
+build_deps.bat --sdl-vulkan ON --sdl-opengl ON
 ```
 
-#### VulkanMemoryAllocator (Header-only)
-```bash
-git clone --depth 1 --branch v3.3.0 https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git deps/VulkanMemoryAllocator
+### Main Project Options
+
+```cmd
+REM Debug build
+build_windows.bat --build-type Debug
+
+REM Clean rebuild
+build_windows.bat --clean
+
+REM Custom paths
+build_windows.bat --vulkan-sdk "C:\VulkanSDK\1.3.290.0" --skia-path "C:\libs\skia"
 ```
 
-#### Skia
-```bash
-# Install depot_tools first
-git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-export PATH="${PWD}/depot_tools:$PATH"
+## Project Structure
 
-# Clone Skia
-git clone https://skia.googlesource.com/skia.git deps/skia
-cd deps/skia
-git checkout chrome/m146
-python3 tools/git-sync-deps
-
-# Build
-bin/gn gen out/Release --args='
-is_official_build=true
-skia_enable_tools=false
-skia_use_system_expat=false
-skia_use_system_harfbuzz=false
-skia_use_system_icu=false
-skia_use_system_libjpeg_turbo=false
-skia_use_system_libpng=false
-skia_use_system_libwebp=false
-skia_use_system_zlib=false
-skia_enable_gpu=true
-skia_enable_vulkan=true
-skia_use_vulkan=true
-extra_cflags_cc=["-frtti"]
-'
-ninja -C out/Release
+```
+skia-renderer/
+├── src/
+│   ├── main.cpp                 # Entry point
+│   ├── core/
+│   │   ├── Application.h/cpp    # Main application class
+│   └── renderer/
+│       ├── VulkanContext.h/cpp  # Vulkan initialization (vk-bootstrap)
+│       ├── Swapchain.h/cpp      # Swapchain management
+│       └── SkiaRenderer.h/cpp   # Skia Graphite rendering
+├── deps/                        # Dependencies (downloaded)
+├── build_deps.bat               # Build dependencies
+├── sync_deps.bat                # Download dependencies
+├── build_windows.bat            # Build main project
+├── build_all.bat                # One-click build
+└── CMakeLists.txt               # CMake configuration
 ```
 
-## Building
+## Skia Build Arguments Reference
 
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
-```
+Key Skia GN arguments used:
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `target_cpu` | x64 | Target architecture |
+| `is_official_build` | true | Optimized release build |
+| `skia_enable_graphite` | true | Enable Graphite backend |
+| `skia_enable_ganesh` | true | Enable Ganesh backend |
+| `skia_use_vulkan` | true | Vulkan support |
+| `skia_use_gl` | true | OpenGL support |
+| `skia_enable_tools` | false | Build Skia tools |
+| `skia_enable_pdf` | true | PDF support |
+| `skia_use_system_*` | false | Use system libraries |
 
 ## Running
 
-```bash
-./skia-renderer
-./skia-renderer --width 1920 --height 1080
+```cmd
+REM From build directory
+build\Release\skia-renderer.exe
+
+REM With custom window size
+build\Release\skia-renderer.exe --width 1920 --height 1080
 ```
 
 Press **ESC** to exit.
 
-## Architecture
+## Troubleshooting
 
+### "VULKAN_SDK not set"
+```cmd
+set VULKAN_SDK=C:\VulkanSDK\1.3.290.0
 ```
-src/
-├── main.cpp                 # Entry point
-├── core/
-│   ├── Application.h/cpp    # Main application class
-└── renderer/
-    ├── VulkanContext.h/cpp  # Vulkan initialization (vk-bootstrap)
-    ├── Swapchain.h/cpp      # Swapchain management
-    └── SkiaRenderer.h/cpp   # Skia Graphite rendering
+
+### "aria2c not found"
+```cmd
+winget install aria2
 ```
+
+### "depot_tools not found"
+```cmd
+set DEPOT_TOOLS=C:\path\to\depot_tools
+set PATH=%DEPOT_TOOLS%;%PATH%
+```
+
+### CMake can't find dependencies
+```cmd
+build_windows.bat --sdl3-path "path\to\SDL3" --skia-path "path\to\skia"
+```
+
+## Dependencies
+
+| Library | Version | License |
+|---------|---------|---------|
+| SDL3 | 3.4.2+ | Zlib |
+| vk-bootstrap | 1.4.343+ | MIT |
+| VulkanMemoryAllocator | 3.3.0+ | MIT |
+| Skia | chrome/m146 | BSD-3-Clause |
 
 ## License
 
