@@ -166,6 +166,37 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict,
                depot_tools: Path, sccache: str = None) -> bool:
     """Build Skia with gn + ninja using Clang + sccache"""
     
+    script_dir = Path(__file__).parent.resolve()
+    
+    # Apply patches to Skia before building
+    patches_dir = script_dir / "patches"
+    if patches_dir.exists():
+        for patch_file in patches_dir.glob("*.patch"):
+            print(f"  Applying patch: {patch_file.name}")
+            result = subprocess.run(
+                ["git", "apply", "--check", str(patch_file)],
+                cwd=str(skia_dir),
+                capture_output=True
+            )
+            if result.returncode == 0:
+                subprocess.run(
+                    ["git", "apply", str(patch_file)],
+                    cwd=str(skia_dir),
+                    check=True
+                )
+                print(f"    Applied: {patch_file.name}")
+            else:
+                # Patch might already be applied, check if it's applied
+                result = subprocess.run(
+                    ["git", "apply", "--reverse", "--check", str(patch_file)],
+                    cwd=str(skia_dir),
+                    capture_output=True
+                )
+                if result.returncode == 0:
+                    print(f"    Already applied: {patch_file.name}")
+                else:
+                    print(f"    Warning: Could not apply patch {patch_file.name}")
+    
     # Add depot_tools to PATH
     env = os.environ.copy()
     env["PATH"] = str(depot_tools) + os.pathsep + env.get("PATH", "")
