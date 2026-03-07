@@ -7,6 +7,8 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkFont.h"
 
 // Skia Graphite headers
 #include "include/gpu/graphite/Context.h"
@@ -227,16 +229,17 @@ void SkiaRenderer::drawContent() {
         paint
     );
 
-    // Draw some text
+    // Draw some text using SkFont (new Skia API)
+    SkFont font;
+    font.setSize(24);
     paint.setColor(SK_ColorWHITE);
-    paint.setTextSize(24);
-    canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 40, paint);
+    canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 40, font, paint);
     
     // Draw FPS indicator area
-    paint.setTextSize(16);
+    font.setSize(16);
     paint.setColor(SkColorSetARGB(180, 180, 180, 180));
-    canvas->drawString("Renderer: Skia Graphite + Vulkan 1.3", 20, m_height - 40, paint);
-    canvas->drawString("Press ESC to exit", 20, m_height - 20, paint);
+    canvas->drawString("Renderer: Skia Graphite + Vulkan 1.3", 20, m_height - 40, font, paint);
+    canvas->drawString("Press ESC to exit", 20, m_height - 20, font, paint);
 }
 
 } // namespace skia_renderer
