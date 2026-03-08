@@ -257,6 +257,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(${PROJECT_NAME} PRIVATE
         DEBUG_BUILD
         ENABLE_VULKAN_VALIDATION
+        SK_DEBUG
+        
     )
     message(STATUS "Debug build: Vulkan validation enabled")
 endif()
