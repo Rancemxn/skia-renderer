@@ -286,7 +286,8 @@ def sync_deps(args):
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
-    print("Next: python build_deps.py")
+    print("Next: python build.py --build-type Release")
+    print("       python build.py --build-type Debug")
     print()
     
     return 0
