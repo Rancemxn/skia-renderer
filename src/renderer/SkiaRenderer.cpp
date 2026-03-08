@@ -710,10 +710,29 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     presentBarrier.subresourceRange.baseArrayLayer = 0;
     presentBarrier.subresourceRange.layerCount = 1;
 
+    // Transition src image back to COLOR_ATTACHMENT_OPTIMAL for next frame
+    VkImageMemoryBarrier2 srcRestoreBarrier{};
+    srcRestoreBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    srcRestoreBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    srcRestoreBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+    srcRestoreBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    srcRestoreBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+    srcRestoreBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    srcRestoreBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    srcRestoreBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    srcRestoreBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    srcRestoreBarrier.image = srcImage;
+    srcRestoreBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    srcRestoreBarrier.subresourceRange.baseMipLevel = 0;
+    srcRestoreBarrier.subresourceRange.levelCount = 1;
+    srcRestoreBarrier.subresourceRange.baseArrayLayer = 0;
+    srcRestoreBarrier.subresourceRange.layerCount = 1;
+
     VkDependencyInfo presentDepInfo{};
     presentDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    presentDepInfo.imageMemoryBarrierCount = 1;
-    presentDepInfo.pImageMemoryBarriers = &presentBarrier;
+    presentDepInfo.imageMemoryBarrierCount = 2;
+    VkImageMemoryBarrier2 barriers[] = {presentBarrier, srcRestoreBarrier};
+    presentDepInfo.pImageMemoryBarriers = barriers;
     vkCmdPipelineBarrier2(cmdBuffer, &presentDepInfo);
 
     vkEndCommandBuffer(cmdBuffer);
