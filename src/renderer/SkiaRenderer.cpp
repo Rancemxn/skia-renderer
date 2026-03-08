@@ -248,14 +248,15 @@ bool SkiaRenderer::createSwapchainSurfaces() {
             return false;
         }
 
-        // Create VulkanTextureInfo - following Skia's example exactly
+        // Get actual usage flags from swapchain (includes SAMPLED_BIT, INPUT_ATTACHMENT_BIT if supported)
+        VkImageUsageFlags actualUsageFlags = m_context->getSwapchain()->getImageUsageFlags();
+        std::cout << "  Image " << i << " usage flags: 0x" << std::hex << actualUsageFlags << std::dec << std::endl;
+
+        // Create VulkanTextureInfo - use actual swapchain usage flags
         skgpu::graphite::VulkanTextureInfo textureInfo;
         textureInfo.fImageTiling = VK_IMAGE_TILING_OPTIMAL;
         textureInfo.fFormat = swapchainFormat;
-        textureInfo.fImageUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                VK_IMAGE_USAGE_SAMPLED_BIT;
+        textureInfo.fImageUsageFlags = actualUsageFlags;  // Use actual flags from swapchain
         textureInfo.fSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         textureInfo.fFlags = 0;
 

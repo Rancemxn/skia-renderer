@@ -28,10 +28,10 @@ public:
     void shutdown();
     void recreate(int width, int height);
 
-    VkResult acquireNextImage(VkSemaphore semaphore, VkFence fence, uint32_t* imageIndex);
     VkSwapchainKHR getSwapchain() const { return m_swapchain; }
     VkFormat getFormat() const { return m_format; }
     VkExtent2D getExtent() const { return m_extent; }
+    VkImageUsageFlags getImageUsageFlags() const { return m_imageUsageFlags; }
     VkFramebuffer getFramebuffer(size_t index) const;  // May return VK_NULL_HANDLE if not created
     VkImage getImage(size_t index) const;
     VkImageView getImageView(size_t index) const;
@@ -55,6 +55,7 @@ private:
     
     VkFormat m_format = VK_FORMAT_UNDEFINED;
     VkExtent2D m_extent = {0, 0};
+    VkImageUsageFlags m_imageUsageFlags = 0;
     
     bool m_initialized = false;
 };
