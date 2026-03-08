@@ -77,16 +77,19 @@ void VulkanContext::shutdown() {
 
     // Cleanup synchronization objects
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroyFence(m_deviceInfo.device, m_inFlightFences[i], nullptr);
-    }
-    
-    // Cleanup per-image render finished semaphores
-    for (size_t i = 0; i < m_renderFinishedSemaphores.size(); i++) {
+        vkDestroySemaphore(m_deviceInfo.device, m_imageAvailableSemaphores[i], nullptr);
         vkDestroySemaphore(m_deviceInfo.device, m_renderFinishedSemaphores[i], nullptr);
+        vkDestroyFence(m_deviceInfo.device, m_inFlightFences[i], nullptr);
     }
 
     // Cleanup swapchain
     m_swapchain.reset();
+
+    // Cleanup render pass
+    if (m_renderPass) {
+        vkDestroyRenderPass(m_deviceInfo.device, m_renderPass, nullptr);
+        m_renderPass = VK_NULL_HANDLE;
+    }
 
     // Cleanup device
     if (m_deviceInfo.device) {
@@ -281,16 +284,60 @@ bool VulkanContext::createCommandPool() {
 }
 
 bool VulkanContext::createRenderPass() {
-    // We don't use a Vulkan render pass anymore - Skia Graphite handles rendering directly
-    // Keep the renderPass member as VK_NULL_HANDLE
-    m_renderPass = VK_NULL_HANDLE;
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_SRGB;  // Will be updated by swapchain
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
+    VkResult result = vkCreateRenderPass(
+        m_deviceInfo.device,
+        &renderPassInfo,
+        nullptr,
+        &m_renderPass);
+
+    if (result != VK_SUCCESS) {
+        std::cerr << "Failed to create render pass" << std::endl;
+        return false;
+    }
+
     return true;
 }
 
 bool VulkanContext::createSyncObjects() {
-    // Create per-frame-in-flight fences
+    m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
     m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-    m_imagesInFlight.resize(m_swapchain->getImageCount(), UINT32_MAX);
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -300,21 +347,13 @@ bool VulkanContext::createSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateFence(m_deviceInfo.device, &fenceInfo, nullptr, 
-                          &m_inFlightFences[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create fences" << std::endl;
-            return false;
-        }
-    }
-
-    // Create per-swapchain-image semaphores for render completion signaling
-    size_t imageCount = m_swapchain->getImageCount();
-    m_renderFinishedSemaphores.resize(imageCount);
-
-    for (size_t i = 0; i < imageCount; i++) {
         if (vkCreateSemaphore(m_deviceInfo.device, &semaphoreInfo, nullptr, 
-                              &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create render finished semaphores" << std::endl;
+                              &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(m_deviceInfo.device, &semaphoreInfo, nullptr, 
+                              &m_renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(m_deviceInfo.device, &fenceInfo, nullptr, 
+                          &m_inFlightFences[i]) != VK_SUCCESS) {
+            std::cerr << "Failed to create synchronization objects" << std::endl;
             return false;
         }
     }
@@ -331,12 +370,11 @@ bool VulkanContext::beginFrame() {
     vkWaitForFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame], 
                     VK_TRUE, UINT64_MAX);
 
-    // Acquire next swapchain image using the frame's fence for synchronization
-    uint32_t imageIndex;
+    // Acquire next swapchain image
     VkResult result = m_swapchain->acquireNextImage(
+        m_imageAvailableSemaphores[m_currentFrame],
         VK_NULL_HANDLE,
-        m_inFlightFences[m_currentFrame],
-        &imageIndex);
+        &m_currentImageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         // Swapchain needs recreation
@@ -346,21 +384,63 @@ bool VulkanContext::beginFrame() {
         return false;
     }
 
-    // Store the acquired image index
-    m_currentImageIndex = imageIndex;
-
-    // Check if a previous frame is using this image - wait for its fence
-    if (m_imagesInFlight[m_currentImageIndex] != UINT32_MAX) {
-        vkWaitForFences(m_deviceInfo.device, 1, 
-                        &m_inFlightFences[m_imagesInFlight[m_currentImageIndex]], 
-                        VK_TRUE, UINT64_MAX);
-    }
-    m_imagesInFlight[m_currentImageIndex] = m_currentFrame;
-
-    // Wait for the acquire to complete (fence was signaled by acquireNextImage)
-    vkWaitForFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame], 
-                    VK_TRUE, UINT64_MAX);
+    // Reset fence before submitting new work
     vkResetFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame]);
+
+    // Reset and begin command buffer
+    VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
+    vkResetCommandBuffer(cmd, 0);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        std::cerr << "Failed to begin command buffer" << std::endl;
+        return false;
+    }
+
+    // Transition swapchain image to color attachment optimal
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_swapchain->getImage(m_currentImageIndex);
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    // Begin render pass
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = m_renderPass;
+    renderPassInfo.framebuffer = m_swapchain->getFramebuffer(m_currentImageIndex);
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = m_swapchain->getExtent();
+
+    // Clear values
+    std::array<VkClearValue, 1> clearValues{};
+    clearValues[0].color = {{0.1f, 0.1f, 0.15f, 1.0f}};  // Dark blue-gray background
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     m_frameStarted = true;
     return true;
@@ -371,19 +451,49 @@ void VulkanContext::endFrame() {
         return;
     }
 
-    // Wait for Skia's GPU work to complete before presenting
-    vkDeviceWaitIdle(m_deviceInfo.device);
+    VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
 
-    // Present - wait on the per-image render finished semaphore
+    // End render pass
+    vkCmdEndRenderPass(cmd);
+
+    // End command buffer
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        std::cerr << "Failed to end command buffer" << std::endl;
+        return;
+    }
+
+    // Submit command buffer
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrame];
+
+    VkResult result = vkQueueSubmit(m_deviceInfo.graphicsQueue, 1, &submitInfo, 
+                                     m_inFlightFences[m_currentFrame]);
+    if (result != VK_SUCCESS) {
+        std::cerr << "Failed to submit draw command buffer" << std::endl;
+        return;
+    }
+
+    // Present
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 0;  // Skia handles its own synchronization
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[m_currentFrame];
     presentInfo.swapchainCount = 1;
     VkSwapchainKHR swapchain = m_swapchain->getSwapchain();
     presentInfo.pSwapchains = &swapchain;
     presentInfo.pImageIndices = &m_currentImageIndex;
 
-    VkResult result = vkQueuePresentKHR(m_deviceInfo.presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(m_deviceInfo.presentQueue, &presentInfo);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         // Need to recreate swapchain
@@ -416,6 +526,14 @@ VkExtent2D VulkanContext::getSwapchainExtent() const {
 
 VkFormat VulkanContext::getSwapchainFormat() const {
     return m_swapchain ? m_swapchain->getFormat() : VK_FORMAT_UNDEFINED;
+}
+
+VkSemaphore VulkanContext::getImageAvailableSemaphore() const {
+    return m_imageAvailableSemaphores[m_currentFrame];
+}
+
+VkSemaphore VulkanContext::getRenderFinishedSemaphore() const {
+    return m_renderFinishedSemaphores[m_currentFrame];
 }
 
 VkCommandBuffer VulkanContext::getCurrentCommandBuffer() const {
