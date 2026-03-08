@@ -129,14 +129,32 @@ bool Swapchain::createSwapchain(int width, int height) {
     }
     m_format = surfaceFormat.format;
 
-    // Choose present mode
-    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    // Choose present mode - prefer low-latency modes
+    // Priority: MAILBOX > IMMEDIATE > FIFO_RELAXED > FIFO
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;  // Fallback
+    bool hasMailbox = false, hasImmediate = false, hasFifoRelaxed = false;
+    
     for (const auto& mode : presentModes) {
-        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
-            presentMode = mode;
-            break;
-        }
+        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) hasMailbox = true;
+        else if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) hasImmediate = true;
+        else if (mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR) hasFifoRelaxed = true;
     }
+    
+    // Select based on priority
+    if (hasMailbox) {
+        presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+        std::cout << "Present mode: MAILBOX (low latency, no tearing)" << std::endl;
+    } else if (hasImmediate) {
+        presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        std::cout << "Present mode: IMMEDIATE (lowest latency, possible tearing)" << std::endl;
+    } else if (hasFifoRelaxed) {
+        presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+        std::cout << "Present mode: FIFO_RELAXED (low latency, occasional tearing)" << std::endl;
+    } else {
+        std::cout << "Present mode: FIFO (VSync, stable)" << std::endl;
+    }
+    
+    m_presentMode = presentMode;
 
     // Choose extent
     if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {

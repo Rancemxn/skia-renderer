@@ -34,6 +34,7 @@ public:
     VkFormat getFormat() const { return m_format; }
     VkExtent2D getExtent() const { return m_extent; }
     VkImageUsageFlags getImageUsageFlags() const { return m_imageUsageFlags; }
+    VkPresentModeKHR getPresentMode() const { return m_presentMode; }
     size_t getImageCount() const { return m_images.size(); }
     VkFramebuffer getFramebuffer(size_t index) const;  // May return VK_NULL_HANDLE if not created
     VkImage getImage(size_t index) const;
@@ -58,6 +59,7 @@ private:
     VkFormat m_format = VK_FORMAT_UNDEFINED;
     VkExtent2D m_extent = {0, 0};
     VkImageUsageFlags m_imageUsageFlags = 0;
+    VkPresentModeKHR m_presentMode = VK_PRESENT_MODE_FIFO_KHR;
     
     bool m_initialized = false;
 };
