@@ -95,12 +95,23 @@ void Application::run() {
     }
 
     auto lastTime = std::chrono::high_resolution_clock::now();
+    int frameCount = 0;
+    float fpsTimer = 0.0f;
 
     while (m_impl->running) {
         // Calculate delta time
         auto currentTime = std::chrono::high_resolution_clock::now();
         float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
         lastTime = currentTime;
+        
+        // FPS calculation
+        frameCount++;
+        fpsTimer += deltaTime;
+        if (fpsTimer >= 1.0f) {
+            // Could output FPS here if desired
+            frameCount = 0;
+            fpsTimer = 0.0f;
+        }
 
         processEvents();
         update(deltaTime);
@@ -149,14 +160,12 @@ void Application::processEvents() {
                 break;
                 
             case SDL_EVENT_KEY_DOWN:
-                // SDL3: event.key.keysym.sym -> event.key.key
                 if (event.key.key == SDLK_ESCAPE) {
                     m_impl->running = false;
                 }
                 break;
                 
             case SDL_EVENT_WINDOW_RESIZED:
-                // Handle window resize
                 int newWidth = event.window.data1;
                 int newHeight = event.window.data2;
                 
@@ -179,18 +188,15 @@ void Application::update(float deltaTime) {
 }
 
 void Application::render() {
-    // Begin frame (acquires swapchain image, begins render pass)
+    // Begin frame - acquire swapchain image
     if (!m_impl->vulkanContext->beginFrame()) {
         return;
     }
 
-    // Get current command buffer
-    VkCommandBuffer cmd = m_impl->vulkanContext->getCurrentCommandBuffer();
+    // Let Skia Graphite render to the swapchain image
+    m_impl->skiaRenderer->render();
 
-    // Render with Skia (currently just placeholder)
-    m_impl->skiaRenderer->render(cmd);
-
-    // End frame (ends render pass, submits, presents)
+    // End frame - present swapchain image
     m_impl->vulkanContext->endFrame();
 }
 

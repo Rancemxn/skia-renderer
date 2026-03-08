@@ -23,12 +23,13 @@ public:
     void shutdown();
     void resize(int width, int height);
 
-    // Render content using the current command buffer within the render pass
-    void render(VkCommandBuffer cmd);
+    // Skia Graphite handles its own rendering - call this to render and submit
+    void render();
 
 private:
     bool createSkiaContext();
-    void drawContent(VkCommandBuffer cmd);
+    bool createRenderTarget();
+    void drawContent();
 
     VulkanContext* m_context = nullptr;
     

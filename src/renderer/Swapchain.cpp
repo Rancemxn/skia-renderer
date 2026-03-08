@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <array>
 
 namespace skia_renderer {
 
@@ -34,8 +35,11 @@ bool Swapchain::initialize(
         return false;
     }
 
-    if (!createFramebuffers()) {
-        return false;
+    // Only create framebuffers if render pass is provided (not for Skia Graphite)
+    if (m_renderPass != VK_NULL_HANDLE) {
+        if (!createFramebuffers()) {
+            return false;
+        }
     }
 
     m_initialized = true;
@@ -54,13 +58,17 @@ void Swapchain::shutdown() {
 void Swapchain::cleanup() {
     // Cleanup framebuffers
     for (auto framebuffer : m_framebuffers) {
-        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+        if (framebuffer != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+        }
     }
     m_framebuffers.clear();
 
     // Cleanup image views
     for (auto imageView : m_imageViews) {
-        vkDestroyImageView(m_device, imageView, nullptr);
+        if (imageView != VK_NULL_HANDLE) {
+            vkDestroyImageView(m_device, imageView, nullptr);
+        }
     }
     m_imageViews.clear();
 
@@ -68,7 +76,7 @@ void Swapchain::cleanup() {
     m_images.clear();
 
     // Cleanup swapchain
-    if (m_swapchain) {
+    if (m_swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
         m_swapchain = VK_NULL_HANDLE;
     }
@@ -81,7 +89,10 @@ void Swapchain::recreate(int width, int height) {
     
     createSwapchain(width, height);
     createImageViews();
-    createFramebuffers();
+    
+    if (m_renderPass != VK_NULL_HANDLE) {
+        createFramebuffers();
+    }
 }
 
 bool Swapchain::createSwapchain(int width, int height) {
@@ -101,7 +112,7 @@ bool Swapchain::createSwapchain(int width, int height) {
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
 
-    // Choose surface format (prefer SRGB)
+    // Choose surface format (prefer SRGB for correct color rendering)
     VkSurfaceFormatKHR surfaceFormat = formats[0];
     for (const auto& format : formats) {
         if (format.format == VK_FORMAT_B8G8R8A8_SRGB && 
@@ -112,7 +123,7 @@ bool Swapchain::createSwapchain(int width, int height) {
     }
     m_format = surfaceFormat.format;
 
-    // Choose present mode (prefer mailbox for triple buffering)
+    // Choose present mode (prefer mailbox for low latency)
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     for (const auto& mode : presentModes) {
         if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
@@ -133,13 +144,13 @@ bool Swapchain::createSwapchain(int width, int height) {
                                      capabilities.maxImageExtent.height);
     }
 
-    // Get image count (one more than minimum for triple buffering)
+    // Get image count (try for triple buffering)
     uint32_t imageCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
         imageCount = capabilities.maxImageCount;
     }
 
-    // Create swapchain
+    // Create swapchain with usage flags suitable for Skia Graphite
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     createInfo.surface = m_surface;
@@ -148,7 +159,10 @@ bool Swapchain::createSwapchain(int width, int height) {
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = m_extent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    // Add TRANSFER_DST for potential blit operations and COLOR_ATTACHMENT for rendering
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | 
+                            VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode = presentMode;
@@ -157,7 +171,7 @@ bool Swapchain::createSwapchain(int width, int height) {
 
     VkResult result = vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain);
     if (result != VK_SUCCESS) {
-        std::cerr << "Failed to create swapchain" << std::endl;
+        std::cerr << "Failed to create swapchain: " << result << std::endl;
         return false;
     }
 
@@ -166,6 +180,9 @@ bool Swapchain::createSwapchain(int width, int height) {
     m_images.resize(imageCount);
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_images.data());
 
+    std::cout << "Swapchain created: " << m_extent.width << "x" << m_extent.height 
+              << ", " << imageCount << " images, format " << m_format << std::endl;
+    
     return true;
 }
 
@@ -190,7 +207,7 @@ bool Swapchain::createImageViews() {
 
         VkResult result = vkCreateImageView(m_device, &createInfo, nullptr, &m_imageViews[i]);
         if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create image view " << i << std::endl;
+            std::cerr << "Failed to create image view " << i << ": " << result << std::endl;
             return false;
         }
     }
@@ -199,6 +216,10 @@ bool Swapchain::createImageViews() {
 }
 
 bool Swapchain::createFramebuffers() {
+    if (m_renderPass == VK_NULL_HANDLE) {
+        return true;  // No render pass, no framebuffers needed
+    }
+
     m_framebuffers.resize(m_imageViews.size());
 
     for (size_t i = 0; i < m_imageViews.size(); i++) {
@@ -215,7 +236,7 @@ bool Swapchain::createFramebuffers() {
 
         VkResult result = vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_framebuffers[i]);
         if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create framebuffer " << i << std::endl;
+            std::cerr << "Failed to create framebuffer " << i << ": " << result << std::endl;
             return false;
         }
     }
@@ -243,6 +264,13 @@ VkFramebuffer Swapchain::getFramebuffer(size_t index) const {
 VkImage Swapchain::getImage(size_t index) const {
     if (index < m_images.size()) {
         return m_images[index];
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkImageView Swapchain::getImageView(size_t index) const {
+    if (index < m_imageViews.size()) {
+        return m_imageViews[index];
     }
     return VK_NULL_HANDLE;
 }
