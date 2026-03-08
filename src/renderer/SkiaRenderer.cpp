@@ -849,6 +849,10 @@ void SkiaRenderer::render() {
     paint.setColor(SK_ColorWHITE);
     canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 35, font, paint);
 
+    // Draw FPS
+    std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
+    canvas->drawString(fpsStr.c_str(), 20, 60, font, paint);
+
     font.setSize(14);
     paint.setColor(SkColorSetARGB(180, 200, 200, 200));
 

@@ -26,6 +26,9 @@ public:
     // Render to current swapchain image
     void render();
 
+    // Set FPS for display
+    void setFPS(float fps) { m_fps = fps; }
+
     // Get the render finished semaphore for the current image (for presentation)
     VkSemaphore getRenderFinishedSemaphore() const;
 
@@ -47,6 +50,7 @@ private:
     int m_height = 0;
     bool m_initialized = false;
     bool m_useOffscreenRendering = false;  // Fallback mode when direct rendering not supported
+    float m_fps = 0.0f;  // Current FPS for display
 };
 
 } // namespace skia_renderer
