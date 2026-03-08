@@ -59,11 +59,6 @@ public:
     uint32_t getCurrentImageIndex() const { return m_currentImageIndex; }
     Swapchain* getSwapchain() const { return m_swapchain.get(); }
     
-    // Get semaphore that is signaled when image is available for rendering
-    VkSemaphore getImageAvailableSemaphore() const;
-    // Get semaphore to signal when rendering is complete
-    VkSemaphore getRenderFinishedSemaphore() const;
-    
     // Get current command buffer for external rendering
     VkCommandBuffer getCurrentCommandBuffer() const;
 
@@ -88,10 +83,11 @@ private:
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
     
-    // Synchronization - use per-frame semaphores for simplicity
-    std::vector<VkSemaphore> m_imageAvailableSemaphores;
-    std::vector<VkSemaphore> m_renderFinishedSemaphores;
-    std::vector<VkFence> m_inFlightFences;
+    // Synchronization - per-swapchain-image semaphores to avoid reuse issues
+    std::vector<VkSemaphore> m_imageAvailableSemaphores;   // Per image
+    std::vector<VkSemaphore> m_renderFinishedSemaphores;   // Per image
+    std::vector<VkFence> m_inFlightFences;                  // Per frame
+    std::vector<uint32_t> m_imageToFrame;                   // Which frame is using each image
     
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
     uint32_t m_currentFrame = 0;
