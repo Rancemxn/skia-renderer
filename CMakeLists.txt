@@ -33,7 +33,6 @@ endif()
 # Paths
 # ========================================
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/deps")
-set(BUILD_DIR "${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}")
 
 # ========================================
 # Vulkan SDK
@@ -50,29 +49,33 @@ message(STATUS "Vulkan SDK: ${Vulkan_SDK}")
 if(USE_SYSTEM_SDL)
     find_package(SDL3 REQUIRED)
 else()
-    # Priority: command line > build output > source
+    # SDL3 build output: deps/SDL3/out/{Debug,Release}/
+    set(SDL3_OUT_DIR "${DEPS_DIR}/SDL3/out/${CMAKE_BUILD_TYPE}")
+    
+    # Find SDL3Config.cmake
     set(SDL3_SEARCH_PATHS
         "${SDL3_DIR}"
-        "${BUILD_DIR}/SDL3/lib/cmake/SDL3"
-        "${BUILD_DIR}/SDL3/cmake"
+        "${SDL3_OUT_DIR}/lib/cmake/SDL3"
+        "${SDL3_OUT_DIR}/cmake"
         "${DEPS_DIR}/SDL3/lib/cmake/SDL3"
-        "${DEPS_DIR}/SDL3/cmake"
     )
+    
     find_package(SDL3 REQUIRED HINTS ${SDL3_SEARCH_PATHS})
 endif()
 message(STATUS "SDL3: ${SDL3_INCLUDE_DIRS}")
 
 # ========================================
-# vk-bootstrap
+# vk-bootstrap (VkBootstrap.h)
 # ========================================
 if(USE_SYSTEM_VK_BOOTSTRAP)
     find_package(vk-bootstrap REQUIRED)
 else()
-    set(VKB_SEARCH_PATHS
-        "${VKBOOTSTRAP_DIR}"
-        "${BUILD_DIR}/vk-bootstrap"
-        "${DEPS_DIR}/vk-bootstrap"
-    )
+    # vk-bootstrap build output: deps/vk-bootstrap/out/{Debug,Release}/
+    set(VKB_OUT_DIR "${DEPS_DIR}/vk-bootstrap/out/${CMAKE_BUILD_TYPE}")
+    set(VKB_SOURCE "${DEPS_DIR}/vk-bootstrap")
+    
+    # Search paths
+    set(VKB_SEARCH_PATHS "${VKBOOTSTRAP_DIR}" "${VKB_OUT_DIR}" "${VKB_SOURCE}")
     
     find_path(VK_BOOTSTRAP_INCLUDE_DIR 
         NAMES VkBootstrap.h 
@@ -97,16 +100,16 @@ if(USE_SYSTEM_SKIA)
     find_path(SKIA_INCLUDE_DIR NAMES core/SkSurface.h)
     find_library(SKIA_LIBRARY NAMES skia)
 else()
-    set(SKIA_INCLUDE_DIR "${SKIA_DIR}")
-    if(NOT SKIA_INCLUDE_DIR)
-        set(SKIA_INCLUDE_DIR "${DEPS_DIR}/skia")
+    # Skia build output: deps/skia/out/{Debug,Release}/
+    set(SKIA_DIR "${SKIA_DIR}" CACHE PATH "Skia directory")
+    if(NOT SKIA_DIR)
+        set(SKIA_DIR "${DEPS_DIR}/skia")
     endif()
     
+    set(SKIA_INCLUDE_DIR "${SKIA_DIR}")
     set(SKIA_LIB_PATHS 
         "${SKIA_DIR}/out/${CMAKE_BUILD_TYPE}"
         "${SKIA_DIR}/out"
-        "${DEPS_DIR}/skia/out/${CMAKE_BUILD_TYPE}"
-        "${DEPS_DIR}/skia/out"
     )
     find_library(SKIA_LIBRARY NAMES skia HINTS ${SKIA_LIB_PATHS})
 endif()
@@ -218,7 +221,7 @@ endif()
 # ========================================
 if(NOT WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES
-        BUILD_RPATH "${BUILD_DIR}/SDL3/lib;${DEPS_DIR}/skia/out/${CMAKE_BUILD_TYPE}"
+        BUILD_RPATH "${DEPS_DIR}/SDL3/out/${CMAKE_BUILD_TYPE}/lib;${DEPS_DIR}/skia/out/${CMAKE_BUILD_TYPE}"
         INSTALL_RPATH "$ORIGIN"
     )
 endif()
@@ -230,6 +233,6 @@ message(STATUS "")
 message(STATUS "==== Configuration Summary ====")
 message(STATUS "Build Type:   ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "Output:       ${BUILD_DIR}/skia-renderer")
+message(STATUS "Output:       ${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}")
 message(STATUS "================================")
 message(STATUS "")

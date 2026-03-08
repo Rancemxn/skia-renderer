@@ -3,21 +3,15 @@ Skia Renderer - Build System
 Unified build script for dependencies and main project
 
 Directory Structure:
-  deps/                   - Source dependencies (managed by sync.py)
-    ├── SDL3/
-    ├── vk-bootstrap/
+  deps/                           - Source + build outputs
+    ├── SDL3/out/{Debug,Release}/
+    ├── vk-bootstrap/out/{Debug,Release}/
     ├── skia/out/{Debug,Release}/
     └── depot_tools/
 
-  build/                  - All build outputs
+  build/                          - Main project outputs
     ├── Debug/
-    │   ├── SDL3/
-    │   ├── vk-bootstrap/
-    │   └── skia-renderer/
     └── Release/
-        ├── SDL3/
-        ├── vk-bootstrap/
-        └── skia-renderer/
 """
 
 import os
@@ -141,9 +135,9 @@ def remove_readonly(func, path, _):
 # Build Functions
 # ========================================
 
-def build_sdl3(source_dir: Path, build_dir: Path, build_type: str, 
+def build_sdl3(source_dir: Path, build_type: str, 
                clang: str, clang_pp: str, sccache: str = None) -> bool:
-    """Build SDL3 with CMake"""
+    """Build SDL3 with CMake -> deps/SDL3/out/{Debug,Release}/"""
     print("\n[SDL3]")
     
     if not source_dir.exists():
@@ -156,17 +150,17 @@ def build_sdl3(source_dir: Path, build_dir: Path, build_type: str,
         print("  SDL3 appears to be prebuilt, skipping")
         return True
     
-    # Build directory
-    sdl_build_dir = build_dir / "SDL3"
+    # Build directory: deps/SDL3/out/{Debug,Release}
+    build_dir = source_dir / "out" / build_type
     
     # CMake configure
     cmd = [
-        "cmake", "-S", str(source_dir), "-B", str(sdl_build_dir), 
+        "cmake", "-S", str(source_dir), "-B", str(build_dir), 
         "-G", "Ninja",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DCMAKE_C_COMPILER={clang}",
         f"-DCMAKE_CXX_COMPILER={clang_pp}",
-        f"-DCMAKE_INSTALL_PREFIX={sdl_build_dir}",
+        f"-DCMAKE_INSTALL_PREFIX={build_dir}",
         "-DSDL_VULKAN=ON", "-DSDL_OPENGL=ON", 
         "-DSDL_TEST=OFF", "-DSDL_TESTS=OFF"
     ]
@@ -182,20 +176,18 @@ def build_sdl3(source_dir: Path, build_dir: Path, build_type: str,
     print("  Configuring...")
     run_cmd(cmd)
     
-    # Build
     print("  Building...")
-    run_cmd(["cmake", "--build", str(sdl_build_dir), "--config", build_type])
+    run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
     
-    # Install (to build dir)
     print("  Installing...")
-    run_cmd(["cmake", "--install", str(sdl_build_dir), "--config", build_type])
+    run_cmd(["cmake", "--install", str(build_dir), "--config", build_type])
     
-    print(f"  Output: {sdl_build_dir}")
+    print(f"  Output: {build_dir}")
     return True
 
-def build_vkbootstrap(source_dir: Path, build_dir: Path, build_type: str,
+def build_vkbootstrap(source_dir: Path, build_type: str,
                       clang: str, clang_pp: str, sccache: str = None) -> bool:
-    """Build vk-bootstrap with CMake"""
+    """Build vk-bootstrap with CMake -> deps/vk-bootstrap/out/{Debug,Release}/"""
     print("\n[vk-bootstrap]")
     
     if not source_dir.exists():
@@ -203,16 +195,17 @@ def build_vkbootstrap(source_dir: Path, build_dir: Path, build_type: str,
         print("  Run: python sync.py")
         return False
     
-    vkb_build_dir = build_dir / "vk-bootstrap"
+    # Build directory: deps/vk-bootstrap/out/{Debug,Release}
+    build_dir = source_dir / "out" / build_type
     
     # CMake configure
     cmd = [
-        "cmake", "-S", str(source_dir), "-B", str(vkb_build_dir), 
+        "cmake", "-S", str(source_dir), "-B", str(build_dir), 
         "-G", "Ninja",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DCMAKE_C_COMPILER={clang}",
         f"-DCMAKE_CXX_COMPILER={clang_pp}",
-        f"-DCMAKE_INSTALL_PREFIX={vkb_build_dir}"
+        f"-DCMAKE_INSTALL_PREFIX={build_dir}"
     ]
     
     if platform.system() == "Windows":
@@ -227,17 +220,17 @@ def build_vkbootstrap(source_dir: Path, build_dir: Path, build_type: str,
     run_cmd(cmd)
     
     print("  Building...")
-    run_cmd(["cmake", "--build", str(vkb_build_dir), "--config", build_type])
+    run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
     
     print("  Installing...")
-    run_cmd(["cmake", "--install", str(vkb_build_dir), "--config", build_type])
+    run_cmd(["cmake", "--install", str(build_dir), "--config", build_type])
     
-    print(f"  Output: {vkb_build_dir}")
+    print(f"  Output: {build_dir}")
     return True
 
 def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
                depot_tools: Path, target_cpu: str, sccache: str = None) -> bool:
-    """Build Skia with GN + Ninja"""
+    """Build Skia with GN + Ninja -> deps/skia/out/{Debug,Release}/"""
     print("\n[Skia]")
     
     if not skia_dir.exists():
@@ -326,11 +319,10 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         gn_args.append(f'cc_wrapper="{sccache}"')
     
     gn_args_str = " ".join(gn_args)
-    print(f"  GN args: is_{'official' if build_type == 'Release' else 'debug'}_build")
     
-    # Generate and build
+    # Build directory: deps/skia/out/{Debug,Release}
     out_dir = f"out/{build_type}"
-    print("  Generating...")
+    print(f"  Configuring...")
     run_cmd([gn, "gen", out_dir, f"--args={gn_args_str}"], cwd=str(skia_dir), env=env)
     
     print("  Building...")
@@ -339,36 +331,33 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     print(f"  Output: {skia_dir / out_dir}")
     return True
 
-def build_main_project(script_dir: Path, build_dir: Path, build_type: str,
+def build_main_project(script_dir: Path, build_type: str,
                        clang: str, clang_pp: str, sccache: str = None,
                        vulkan_sdk: str = None, clean: bool = False,
                        cmake_args: str = None) -> bool:
-    """Build main project with CMake"""
+    """Build main project with CMake -> build/{Debug,Release}/"""
     print("\n[skia-renderer]")
     
     deps_dir = script_dir / "deps"
     
+    # Build directory: build/{Debug,Release}
+    build_dir = script_dir / "build" / build_type
+    
     # Clean if requested
-    main_build_dir = build_dir / "skia-renderer"
-    if clean and main_build_dir.exists():
-        print(f"  Cleaning: {main_build_dir}")
-        shutil.rmtree(main_build_dir, onerror=remove_readonly)
+    if clean and build_dir.exists():
+        print(f"  Cleaning: {build_dir}")
+        shutil.rmtree(build_dir, onerror=remove_readonly)
     
-    main_build_dir.mkdir(parents=True, exist_ok=True)
+    build_dir.mkdir(parents=True, exist_ok=True)
     
-    # Determine paths
-    sdl3_dir = build_dir / "SDL3" / "lib" / "cmake" / "SDL3"
-    if not sdl3_dir.exists():
-        sdl3_dir = build_dir / "SDL3" / "cmake"
-    if not sdl3_dir.exists():
-        sdl3_dir = deps_dir / "SDL3" / "lib" / "cmake" / "SDL3"
-    
-    vkb_dir = build_dir / "vk-bootstrap"
+    # Determine dependency paths
+    sdl3_dir = deps_dir / "SDL3" / "out" / build_type
+    vkb_dir = deps_dir / "vk-bootstrap" / "out" / build_type
     skia_dir = deps_dir / "skia"
     
     # CMake configure
     cmd = [
-        "cmake", "-S", str(script_dir), "-B", str(main_build_dir),
+        "cmake", "-S", str(script_dir), "-B", str(build_dir),
         "-G", "Ninja",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DCMAKE_C_COMPILER={clang}",
@@ -385,12 +374,10 @@ def build_main_project(script_dir: Path, build_dir: Path, build_type: str,
     if vulkan_sdk:
         cmd.extend([f"-DVULKAN_SDK={vulkan_sdk}", f"-DCMAKE_PREFIX_PATH={vulkan_sdk}"])
     
-    if sdl3_dir.exists():
-        cmd.append(f"-DSDL3_DIR={sdl3_dir}")
-    
     cmd.extend([
-        f"-DSKIA_DIR={skia_dir}",
-        f"-DVKBOOTSTRAP_DIR={vkb_dir}"
+        f"-DSDL3_DIR={sdl3_dir}",
+        f"-DVKBOOTSTRAP_DIR={vkb_dir}",
+        f"-DSKIA_DIR={skia_dir}"
     ])
     
     if cmake_args:
@@ -400,11 +387,11 @@ def build_main_project(script_dir: Path, build_dir: Path, build_type: str,
     run_cmd(cmd)
     
     print("  Building...")
-    run_cmd(["cmake", "--build", str(main_build_dir), "--config", build_type])
+    run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
     
     # Report output
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
-    exe_path = main_build_dir / exe_name
+    exe_path = build_dir / exe_name
     if exe_path.exists():
         size_mb = exe_path.stat().st_size / (1024 * 1024)
         print(f"  Executable: {exe_path} ({size_mb:.1f} MB)")
@@ -426,6 +413,12 @@ Examples:
   python build.py --skip-deps              # Build main project only
   python build.py --skip-main              # Build dependencies only
   python build.py --clean                  # Clean rebuild
+
+Directory Structure:
+  deps/SDL3/out/{Debug,Release}/           # SDL3 builds
+  deps/vk-bootstrap/out/{Debug,Release}/   # vk-bootstrap builds
+  deps/skia/out/{Debug,Release}/           # Skia builds
+  build/{Debug,Release}/                   # Main project builds
         """
     )
     
@@ -451,14 +444,12 @@ Examples:
     # Paths
     script_dir = Path(__file__).parent.resolve()
     deps_dir = script_dir / "deps"
-    build_dir = script_dir / "build" / args.build_type
     depot_tools = deps_dir / "depot_tools"
     
     print("=" * 60)
     print("Skia Renderer Build System")
     print("=" * 60)
     print(f"Build Type: {args.build_type}")
-    print(f"Build Dir:  {build_dir}")
     print()
     
     # Find tools
@@ -490,7 +481,6 @@ Examples:
     
     print()
     
-    build_dir.mkdir(parents=True, exist_ok=True)
     vulkan_sdk = args.vulkan_sdk or os.environ.get("VULKAN_SDK")
     
     # Build dependencies
@@ -500,10 +490,10 @@ Examples:
         print("=" * 60)
         
         if not args.skip_sdl:
-            build_sdl3(deps_dir / "SDL3", build_dir, args.build_type, clang, clang_pp, sccache)
+            build_sdl3(deps_dir / "SDL3", args.build_type, clang, clang_pp, sccache)
         
         if not args.skip_vkbootstrap:
-            build_vkbootstrap(deps_dir / "vk-bootstrap", build_dir, args.build_type, clang, clang_pp, sccache)
+            build_vkbootstrap(deps_dir / "vk-bootstrap", args.build_type, clang, clang_pp, sccache)
         
         if not args.skip_skia:
             build_skia(deps_dir / "skia", args.build_type, llvm_path, depot_tools, args.target_cpu, sccache)
@@ -515,7 +505,7 @@ Examples:
         print("=" * 60)
         
         build_main_project(
-            script_dir, build_dir, args.build_type,
+            script_dir, args.build_type,
             clang, clang_pp, sccache, vulkan_sdk,
             args.clean, args.cmake_args
         )
@@ -527,7 +517,7 @@ Examples:
     print("=" * 60)
     
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
-    exe_path = build_dir / "skia-renderer" / exe_name
+    exe_path = script_dir / "build" / args.build_type / exe_name
     
     if exe_path.exists():
         print(f"Executable: {exe_path}")
