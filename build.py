@@ -1,10 +1,23 @@
 """
-Skia Renderer - Build Main Project
-Builds skia-renderer with LLVM/Clang + Ninja + sccache
+Skia Renderer - Build System
+Unified build script for dependencies and main project
 
-Build outputs are separated by build type:
-- Debug:   build/Debug/
-- Release: build/Release/
+Directory Structure:
+  deps/                   - Source dependencies (managed by sync.py)
+    ├── SDL3/
+    ├── vk-bootstrap/
+    ├── skia/out/{Debug,Release}/
+    └── depot_tools/
+
+  build/                  - All build outputs
+    ├── Debug/
+    │   ├── SDL3/
+    │   ├── vk-bootstrap/
+    │   └── skia-renderer/
+    └── Release/
+        ├── SDL3/
+        ├── vk-bootstrap/
+        └── skia-renderer/
 """
 
 import os
@@ -12,8 +25,13 @@ import sys
 import shutil
 import subprocess
 import argparse
+import stat
 import platform
 from pathlib import Path
+
+# ========================================
+# Tool Finding
+# ========================================
 
 def find_tool(name: str, extra_paths: list = None) -> str:
     """Find a tool in PATH or specified paths"""
@@ -35,7 +53,6 @@ def find_tool(name: str, extra_paths: list = None) -> str:
 
 def find_llvm() -> tuple:
     """Find LLVM installation"""
-    # Check PATH first
     clang = find_tool("clang")
     if clang:
         clang_path = Path(clang)
@@ -43,14 +60,12 @@ def find_llvm() -> tuple:
         clang_pp = find_tool("clang++", [str(clang_path.parent)])
         return str(llvm_path), clang, clang_pp or str(clang_path.parent / "clang++")
     
-    # Check common Windows paths
     if platform.system() == "Windows":
         for base in [r"C:\Program Files\LLVM", r"C:\LLVM"]:
             llvm_path = Path(base)
             if (llvm_path / "bin" / "clang.exe").exists():
                 return str(llvm_path), str(llvm_path / "bin" / "clang.exe"), str(llvm_path / "bin" / "clang++.exe")
     
-    # Check common Unix paths
     for base in ["/usr", "/usr/local", "/opt/homebrew"]:
         llvm_path = Path(base)
         if (llvm_path / "bin" / "clang").exists():
@@ -64,13 +79,11 @@ def find_ninja(depot_tools: Path = None) -> str:
     if ninja:
         return ninja
     
-    # Check depot_tools
     if depot_tools:
         ninja_exe = "ninja.exe" if platform.system() == "Windows" else "ninja"
         if (depot_tools / ninja_exe).exists():
             return str(depot_tools / ninja_exe)
     
-    # Check LLVM bin
     llvm_path, _, _ = find_llvm()
     if llvm_path:
         ninja_exe = "ninja.exe" if platform.system() == "Windows" else "ninja"
@@ -86,7 +99,6 @@ def find_sccache() -> str:
     if sccache:
         return sccache
     
-    # Check common paths
     if platform.system() == "Windows":
         for base in [r"C:\Program Files\sccache", r"C:\sccache", os.path.expanduser("~\\.cargo\\bin")]:
             exe = Path(base) / "sccache.exe"
@@ -100,6 +112,15 @@ def find_sccache() -> str:
     
     return None
 
+def find_gn(depot_tools: Path) -> str:
+    """Find gn executable"""
+    gn = find_tool("gn", [str(depot_tools)])
+    return gn
+
+# ========================================
+# Utility Functions
+# ========================================
+
 def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) -> subprocess.CompletedProcess:
     """Run a command"""
     merged_env = os.environ.copy()
@@ -112,105 +133,242 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
         raise subprocess.CalledProcessError(result.returncode, cmd)
     return result
 
-def build_project(args):
-    """Main build function"""
-    script_dir = Path(__file__).parent.resolve()
-    deps_dir = script_dir / "deps"
-    depot_tools = deps_dir / "depot_tools"
+def remove_readonly(func, path, _):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+# ========================================
+# Build Functions
+# ========================================
+
+def build_sdl3(source_dir: Path, build_dir: Path, build_type: str, 
+               clang: str, clang_pp: str, sccache: str = None) -> bool:
+    """Build SDL3 with CMake"""
+    print("\n[SDL3]")
     
-    build_type = args.build_type
+    if not source_dir.exists():
+        print(f"  ERROR: SDL3 source not found: {source_dir}")
+        print("  Run: python sync.py")
+        return False
     
-    # Build-type-specific directories
-    build_dir = script_dir / "build" / build_type
-    install_dir = deps_dir / "installed" / build_type
+    # Check if prebuilt
+    if not (source_dir / "CMakeLists.txt").exists():
+        print("  SDL3 appears to be prebuilt, skipping")
+        return True
     
-    print("=" * 60)
-    print("Skia Graphite Renderer - Build")
-    print("=" * 60)
-    print()
+    # Build directory
+    sdl_build_dir = build_dir / "SDL3"
     
-    # Detect tools
-    print("[Detecting Build Tools]")
+    # CMake configure
+    cmd = [
+        "cmake", "-S", str(source_dir), "-B", str(sdl_build_dir), 
+        "-G", "Ninja",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
+        f"-DCMAKE_C_COMPILER={clang}",
+        f"-DCMAKE_CXX_COMPILER={clang_pp}",
+        f"-DCMAKE_INSTALL_PREFIX={sdl_build_dir}",
+        "-DSDL_VULKAN=ON", "-DSDL_OPENGL=ON", 
+        "-DSDL_TEST=OFF", "-DSDL_TESTS=OFF"
+    ]
     
-    cmake = find_tool("cmake")
-    if not cmake:
-        print("  ERROR: CMake not found")
-        return 1
-    print(f"  [OK] CMake: {cmake}")
+    if platform.system() == "Windows":
+        runtime_lib = "MultiThreaded" if build_type == "Release" else "MultiThreadedDebug"
+        cmd.append(f"-DCMAKE_MSVC_RUNTIME_LIBRARY={runtime_lib}")
     
-    # Find LLVM (required)
-    llvm_path, clang, clang_pp = find_llvm()
-    if not llvm_path:
-        print("  ERROR: LLVM/Clang not found")
-        print("  Install LLVM: winget install LLVM.LLVM (Windows)")
-        print("  Or: apt install clang (Linux)")
-        return 1
-    print(f"  [OK] LLVM: {llvm_path}")
+    if sccache:
+        cmd.append(f"-DCMAKE_C_COMPILER_LAUNCHER={sccache}")
+        cmd.append(f"-DCMAKE_CXX_COMPILER_LAUNCHER={sccache}")
+    
+    print("  Configuring...")
+    run_cmd(cmd)
+    
+    # Build
+    print("  Building...")
+    run_cmd(["cmake", "--build", str(sdl_build_dir), "--config", build_type])
+    
+    # Install (to build dir)
+    print("  Installing...")
+    run_cmd(["cmake", "--install", str(sdl_build_dir), "--config", build_type])
+    
+    print(f"  Output: {sdl_build_dir}")
+    return True
+
+def build_vkbootstrap(source_dir: Path, build_dir: Path, build_type: str,
+                      clang: str, clang_pp: str, sccache: str = None) -> bool:
+    """Build vk-bootstrap with CMake"""
+    print("\n[vk-bootstrap]")
+    
+    if not source_dir.exists():
+        print(f"  ERROR: vk-bootstrap source not found: {source_dir}")
+        print("  Run: python sync.py")
+        return False
+    
+    vkb_build_dir = build_dir / "vk-bootstrap"
+    
+    # CMake configure
+    cmd = [
+        "cmake", "-S", str(source_dir), "-B", str(vkb_build_dir), 
+        "-G", "Ninja",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
+        f"-DCMAKE_C_COMPILER={clang}",
+        f"-DCMAKE_CXX_COMPILER={clang_pp}",
+        f"-DCMAKE_INSTALL_PREFIX={vkb_build_dir}"
+    ]
+    
+    if platform.system() == "Windows":
+        runtime_lib = "MultiThreaded" if build_type == "Release" else "MultiThreadedDebug"
+        cmd.append(f"-DCMAKE_MSVC_RUNTIME_LIBRARY={runtime_lib}")
+    
+    if sccache:
+        cmd.append(f"-DCMAKE_C_COMPILER_LAUNCHER={sccache}")
+        cmd.append(f"-DCMAKE_CXX_COMPILER_LAUNCHER={sccache}")
+    
+    print("  Configuring...")
+    run_cmd(cmd)
+    
+    print("  Building...")
+    run_cmd(["cmake", "--build", str(vkb_build_dir), "--config", build_type])
+    
+    print("  Installing...")
+    run_cmd(["cmake", "--install", str(vkb_build_dir), "--config", build_type])
+    
+    print(f"  Output: {vkb_build_dir}")
+    return True
+
+def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
+               depot_tools: Path, target_cpu: str, sccache: str = None) -> bool:
+    """Build Skia with GN + Ninja"""
+    print("\n[Skia]")
+    
+    if not skia_dir.exists():
+        print(f"  ERROR: Skia source not found: {skia_dir}")
+        print("  Run: python sync.py")
+        return False
+    
+    # Find tools
+    gn = find_gn(depot_tools)
+    if not gn:
+        print("  ERROR: gn not found in depot_tools")
+        return False
     
     ninja = find_ninja(depot_tools)
     if not ninja:
-        print("  ERROR: Ninja not found")
-        return 1
-    print(f"  [OK] Ninja: {ninja}")
+        print("  ERROR: ninja not found")
+        return False
     
-    # Find sccache (optional)
-    sccache = find_sccache()
+    # Apply patches
+    script_dir = Path(__file__).parent.resolve()
+    patches_dir = script_dir / "patches"
+    if patches_dir.exists():
+        for patch_file in patches_dir.glob("*.patch"):
+            result = subprocess.run(
+                ["git", "apply", "--check", str(patch_file)],
+                cwd=str(skia_dir), capture_output=True
+            )
+            if result.returncode == 0:
+                subprocess.run(["git", "apply", str(patch_file)], cwd=str(skia_dir), check=True)
+                print(f"  Applied patch: {patch_file.name}")
+            else:
+                result = subprocess.run(
+                    ["git", "apply", "--reverse", "--check", str(patch_file)],
+                    cwd=str(skia_dir), capture_output=True
+                )
+                if result.returncode == 0:
+                    print(f"  Patch already applied: {patch_file.name}")
+    
+    # Setup environment
+    env = os.environ.copy()
+    env["PATH"] = str(depot_tools) + os.pathsep + env.get("PATH", "")
     if sccache:
-        print(f"  [OK] sccache: {sccache}")
+        env["SCCACHE_DIR"] = str(skia_dir / ".sccache")
+    
+    # GN args
+    is_windows = platform.system() == "Windows"
+    crt_flag = "/MTd" if build_type == "Debug" else "/MT"
+    
+    gn_args = [
+        f'target_cpu="{target_cpu}"',
+        'cc="clang"', 'cxx="clang++"',
+        f'is_official_build={"true" if build_type == "Release" else "false"}',
+        f'is_debug={"true" if build_type == "Debug" else "false"}',
+        'is_component_build=false',
+        'skia_enable_ganesh=true',
+        'skia_enable_graphite=true',
+        'skia_use_vulkan=true',
+        'skia_use_gl=true',
+        'skia_enable_pdf=true',
+        'skia_enable_precompile=true',
+        'skia_use_angle=true',
+        'skia_use_freetype=true',
+        'skia_use_expat=true',
+        'skia_use_zlib=true',
+        'skia_use_wuffs=true',
+        'skia_use_vma=true',
+        # Use bundled libraries
+        'skia_use_system_expat=false',
+        'skia_use_system_harfbuzz=false',
+        'skia_use_system_icu=false',
+        'skia_use_system_libjpeg_turbo=false',
+        'skia_use_system_libpng=false',
+        'skia_use_system_libwebp=false',
+        'skia_use_system_zlib=false',
+        'skia_use_system_freetype2=false',
+    ]
+    
+    if is_windows:
+        gn_args.append(f'clang_win="{llvm_path}"')
+        gn_args.append(f'extra_cflags=["{crt_flag}"]')
+        gn_args.append(f'extra_cflags_cc=["/GR", "/EHsc", "{crt_flag}"]')
     else:
-        print("  [INFO] sccache not found (optional, speeds up rebuilds)")
+        gn_args.append('extra_cflags_cc=["-frtti", "-fexceptions"]')
     
-    print()
-    
-    # Determine paths
-    vulkan_sdk = args.vulkan_sdk or os.environ.get("VULKAN_SDK")
-    
-    # SDL3 path - build-type-specific
-    sdl3_dir = args.sdl3_path
-    if not sdl3_dir:
-        # Check build-type-specific install first
-        sdl3_cmake = install_dir / "lib" / "cmake" / "SDL3"
-        if sdl3_cmake.exists():
-            sdl3_dir = sdl3_cmake
-        else:
-            # Fallback to deps/SDL3
-            sdl3_dir = deps_dir / "SDL3"
-    
-    # Skia path - build-type-specific
-    skia_dir = args.skia_path or deps_dir / "skia"
-    
-    # vk-bootstrap path - build-type-specific
-    vkb_dir = args.vkbootstrap_path or install_dir
-    
-    print("Configuration:")
-    print(f"  Build Type: {build_type}")
-    print(f"  Build Dir:  {build_dir}")
-    print(f"  Generator:  Ninja (LLVM/Clang)")
     if sccache:
-        print(f"  Cache:      sccache")
-    print()
+        gn_args.append(f'cc_wrapper="{sccache}"')
     
-    print("Dependencies:")
-    print(f"  Vulkan SDK:   {vulkan_sdk or 'Not set'}")
-    print(f"  SDL3:         {sdl3_dir}")
-    print(f"  Skia:         {skia_dir} (out/{build_type})")
-    print(f"  vk-bootstrap: {vkb_dir}")
-    print("  VMA:          (built into Skia)")
-    print()
+    gn_args_str = " ".join(gn_args)
+    print(f"  GN args: is_{'official' if build_type == 'Release' else 'debug'}_build")
+    
+    # Generate and build
+    out_dir = f"out/{build_type}"
+    print("  Generating...")
+    run_cmd([gn, "gen", out_dir, f"--args={gn_args_str}"], cwd=str(skia_dir), env=env)
+    
+    print("  Building...")
+    run_cmd([ninja, "-C", out_dir], cwd=str(skia_dir), env=env)
+    
+    print(f"  Output: {skia_dir / out_dir}")
+    return True
+
+def build_main_project(script_dir: Path, build_dir: Path, build_type: str,
+                       clang: str, clang_pp: str, sccache: str = None,
+                       vulkan_sdk: str = None, clean: bool = False,
+                       cmake_args: str = None) -> bool:
+    """Build main project with CMake"""
+    print("\n[skia-renderer]")
+    
+    deps_dir = script_dir / "deps"
     
     # Clean if requested
-    if args.clean and build_dir.exists():
-        print(f"Cleaning build directory: {build_dir}")
-        shutil.rmtree(build_dir)
+    main_build_dir = build_dir / "skia-renderer"
+    if clean and main_build_dir.exists():
+        print(f"  Cleaning: {main_build_dir}")
+        shutil.rmtree(main_build_dir, onerror=remove_readonly)
     
-    build_dir.mkdir(parents=True, exist_ok=True)
+    main_build_dir.mkdir(parents=True, exist_ok=True)
     
-    # Configure
-    print("Configuring project...")
-    print()
+    # Determine paths
+    sdl3_dir = build_dir / "SDL3" / "lib" / "cmake" / "SDL3"
+    if not sdl3_dir.exists():
+        sdl3_dir = build_dir / "SDL3" / "cmake"
+    if not sdl3_dir.exists():
+        sdl3_dir = deps_dir / "SDL3" / "lib" / "cmake" / "SDL3"
     
+    vkb_dir = build_dir / "vk-bootstrap"
+    skia_dir = deps_dir / "skia"
+    
+    # CMake configure
     cmd = [
-        "cmake", "-S", str(script_dir), "-B", str(build_dir),
+        "cmake", "-S", str(script_dir), "-B", str(main_build_dir),
         "-G", "Ninja",
         f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DCMAKE_C_COMPILER={clang}",
@@ -218,88 +376,165 @@ def build_project(args):
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     ]
     
-    # Add sccache as compiler launcher
     if sccache:
-        cmd.append(f"-DCMAKE_C_COMPILER_LAUNCHER={sccache}")
-        cmd.append(f"-DCMAKE_CXX_COMPILER_LAUNCHER={sccache}")
+        cmd.extend([
+            f"-DCMAKE_C_COMPILER_LAUNCHER={sccache}",
+            f"-DCMAKE_CXX_COMPILER_LAUNCHER={sccache}"
+        ])
     
     if vulkan_sdk:
-        cmd.append(f"-DVULKAN_SDK={vulkan_sdk}")
-        cmd.append(f"-DCMAKE_PREFIX_PATH={vulkan_sdk}")
+        cmd.extend([f"-DVULKAN_SDK={vulkan_sdk}", f"-DCMAKE_PREFIX_PATH={vulkan_sdk}"])
     
-    cmd.append(f"-DSDL3_DIR={sdl3_dir}")
-    cmd.append(f"-DSKIA_DIR={skia_dir}")
-    cmd.append(f"-DVKBOOTSTRAP_DIR={vkb_dir}")
-    cmd.append(f"-DCMAKE_INSTALL_PREFIX={install_dir}")
+    if sdl3_dir.exists():
+        cmd.append(f"-DSDL3_DIR={sdl3_dir}")
     
-    if args.cmake_args:
-        cmd.extend(args.cmake_args.split())
+    cmd.extend([
+        f"-DSKIA_DIR={skia_dir}",
+        f"-DVKBOOTSTRAP_DIR={vkb_dir}"
+    ])
     
-    try:
-        run_cmd(cmd)
-    except Exception as e:
-        print(f"\nERROR: CMake configuration failed: {e}")
-        print("\nTroubleshooting:")
-        print("  1. Set VULKAN_SDK environment variable")
-        print(f"  2. Run: python build_deps.py --build-type {build_type}")
-        print(f"  3. Run: python sync.py")
-        return 1
+    if cmake_args:
+        cmd.extend(cmake_args.split())
     
-    # Build
-    print()
-    print(f"Building {build_type}...")
-    print()
+    print("  Configuring...")
+    run_cmd(cmd)
     
-    try:
-        run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
-    except Exception as e:
-        print(f"\nERROR: Build failed: {e}")
-        return 1
+    print("  Building...")
+    run_cmd(["cmake", "--build", str(main_build_dir), "--config", build_type])
     
-    # Success
-    print()
-    print("=" * 60)
-    print("Build Complete!")
-    print("=" * 60)
-    print()
-    
+    # Report output
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
-    exe_path = build_dir / exe_name
-    
+    exe_path = main_build_dir / exe_name
     if exe_path.exists():
         size_mb = exe_path.stat().st_size / (1024 * 1024)
-        print(f"Executable: {exe_path}")
-        print(f"Size: {size_mb:.1f} MB")
-        print(f"\nRun: {exe_path}")
-    else:
-        print(f"Executable should be in: {build_dir}")
+        print(f"  Executable: {exe_path} ({size_mb:.1f} MB)")
     
-    print()
-    
-    return 0
+    return True
+
+# ========================================
+# Main
+# ========================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Build Skia Graphite Renderer")
+    parser = argparse.ArgumentParser(
+        description="Skia Renderer Build System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python build.py                          # Build Release (dependencies + main)
+  python build.py --build-type Debug       # Build Debug
+  python build.py --skip-deps              # Build main project only
+  python build.py --skip-main              # Build dependencies only
+  python build.py --clean                  # Clean rebuild
+        """
+    )
     
     # Build options
     parser.add_argument("--build-type", default="Release", choices=["Release", "Debug"],
                        help="Build type (default: Release)")
+    parser.add_argument("--target-cpu", default="x64", help="Target CPU for Skia (default: x64)")
     parser.add_argument("--clean", action="store_true", help="Clean before building")
     
-    # Custom paths
+    # Skip options
+    parser.add_argument("--skip-deps", action="store_true", help="Skip building dependencies")
+    parser.add_argument("--skip-main", action="store_true", help="Skip building main project")
+    parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
+    parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
+    parser.add_argument("--skip-skia", action="store_true", help="Skip Skia")
+    
+    # Other options
     parser.add_argument("--vulkan-sdk", help="Vulkan SDK path")
-    parser.add_argument("--sdl3-path", help="SDL3 CMake path (auto-detected if not set)")
-    parser.add_argument("--skia-path", help="Skia path")
-    parser.add_argument("--vkbootstrap-path", help="vk-bootstrap path")
-    parser.add_argument("--cmake-args", help="Extra CMake arguments")
+    parser.add_argument("--cmake-args", help="Extra CMake arguments for main project")
     
     args = parser.parse_args()
     
-    try:
-        return build_project(args)
-    except Exception as e:
-        print(f"\nERROR: {e}")
+    # Paths
+    script_dir = Path(__file__).parent.resolve()
+    deps_dir = script_dir / "deps"
+    build_dir = script_dir / "build" / args.build_type
+    depot_tools = deps_dir / "depot_tools"
+    
+    print("=" * 60)
+    print("Skia Renderer Build System")
+    print("=" * 60)
+    print(f"Build Type: {args.build_type}")
+    print(f"Build Dir:  {build_dir}")
+    print()
+    
+    # Find tools
+    print("[Detecting Tools]")
+    
+    cmake = find_tool("cmake")
+    if not cmake:
+        print("  ERROR: CMake not found")
         return 1
+    print(f"  CMake: {cmake}")
+    
+    llvm_path, clang, clang_pp = find_llvm()
+    if not llvm_path:
+        print("  ERROR: LLVM/Clang not found")
+        return 1
+    print(f"  LLVM: {llvm_path}")
+    
+    ninja = find_ninja(depot_tools)
+    if not ninja:
+        print("  ERROR: Ninja not found")
+        return 1
+    print(f"  Ninja: {ninja}")
+    
+    sccache = find_sccache()
+    if sccache:
+        print(f"  sccache: {sccache}")
+    else:
+        print("  sccache: not found (optional)")
+    
+    print()
+    
+    build_dir.mkdir(parents=True, exist_ok=True)
+    vulkan_sdk = args.vulkan_sdk or os.environ.get("VULKAN_SDK")
+    
+    # Build dependencies
+    if not args.skip_deps:
+        print("=" * 60)
+        print("Building Dependencies")
+        print("=" * 60)
+        
+        if not args.skip_sdl:
+            build_sdl3(deps_dir / "SDL3", build_dir, args.build_type, clang, clang_pp, sccache)
+        
+        if not args.skip_vkbootstrap:
+            build_vkbootstrap(deps_dir / "vk-bootstrap", build_dir, args.build_type, clang, clang_pp, sccache)
+        
+        if not args.skip_skia:
+            build_skia(deps_dir / "skia", args.build_type, llvm_path, depot_tools, args.target_cpu, sccache)
+    
+    # Build main project
+    if not args.skip_main:
+        print("=" * 60)
+        print("Building Main Project")
+        print("=" * 60)
+        
+        build_main_project(
+            script_dir, build_dir, args.build_type,
+            clang, clang_pp, sccache, vulkan_sdk,
+            args.clean, args.cmake_args
+        )
+    
+    # Summary
+    print()
+    print("=" * 60)
+    print("Build Complete!")
+    print("=" * 60)
+    
+    exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
+    exe_path = build_dir / "skia-renderer" / exe_name
+    
+    if exe_path.exists():
+        print(f"Executable: {exe_path}")
+        print(f"\nRun: {exe_path}")
+    
+    print()
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main())
