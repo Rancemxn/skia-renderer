@@ -23,20 +23,17 @@ public:
     void shutdown();
     void resize(int width, int height);
 
-    // Skia Graphite handles its own rendering - call this to render and submit
+    // Render to current swapchain image
     void render();
 
 private:
     bool createSkiaContext();
-    bool createRenderTarget();
-    bool createBlitResources();
-    void blitToSwapchain(VkImage srcImage);
 
     VulkanContext* m_context = nullptr;
-    
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
-    
+
     int m_width = 0;
     int m_height = 0;
     bool m_initialized = false;
