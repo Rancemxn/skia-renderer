@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <vector>
+#include <vector>
 
 namespace skia_renderer {
 
@@ -28,14 +29,15 @@ public:
     void shutdown();
     void recreate(int width, int height);
 
+    VkResult acquireNextImage(VkSemaphore semaphore, VkFence fence, uint32_t* imageIndex);
     VkSwapchainKHR getSwapchain() const { return m_swapchain; }
     VkFormat getFormat() const { return m_format; }
     VkExtent2D getExtent() const { return m_extent; }
     VkImageUsageFlags getImageUsageFlags() const { return m_imageUsageFlags; }
+    size_t getImageCount() const { return m_images.size(); }
     VkFramebuffer getFramebuffer(size_t index) const;  // May return VK_NULL_HANDLE if not created
     VkImage getImage(size_t index) const;
     VkImageView getImageView(size_t index) const;
-    size_t getImageCount() const { return m_images.size(); }
 
 private:
     bool createSwapchain(int width, int height);
