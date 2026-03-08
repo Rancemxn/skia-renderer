@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <array>
 
 namespace skia_renderer {
 
@@ -25,6 +26,10 @@ bool VulkanContext::initialize(SDL_Window* window) {
     }
 
     if (!createDevice()) {
+        return false;
+    }
+
+    if (!createCommandPool()) {
         return false;
     }
 
@@ -62,6 +67,13 @@ void VulkanContext::shutdown() {
     }
 
     waitIdle();
+
+    // Cleanup command buffers and pool
+    if (m_commandPool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(m_deviceInfo.device, m_commandPool, nullptr);
+        m_commandPool = VK_NULL_HANDLE;
+    }
+    m_commandBuffers.clear();
 
     // Cleanup synchronization objects
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -243,9 +255,37 @@ bool VulkanContext::createDevice() {
     return true;
 }
 
+bool VulkanContext::createCommandPool() {
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = m_deviceInfo.graphicsFamilyIndex;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    if (vkCreateCommandPool(m_deviceInfo.device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS) {
+        std::cerr << "Failed to create command pool" << std::endl;
+        return false;
+    }
+
+    // Allocate command buffers (one per frame in flight)
+    m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = static_cast<uint32_t>(m_commandBuffers.size());
+
+    if (vkAllocateCommandBuffers(m_deviceInfo.device, &allocInfo, m_commandBuffers.data()) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate command buffers" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool VulkanContext::createRenderPass() {
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = m_swapchain ? m_swapchain->getFormat() : VK_FORMAT_B8G8R8A8_SRGB;
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_SRGB;  // Will be updated by swapchain
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -342,7 +382,62 @@ bool VulkanContext::beginFrame() {
     }
 
     vkResetFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame]);
-    
+
+    // Reset and begin command buffer
+    VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
+    vkResetCommandBuffer(cmd, 0);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        std::cerr << "Failed to begin command buffer" << std::endl;
+        return false;
+    }
+
+    // Transition swapchain image from UNDEFINED to COLOR_ATTACHMENT_OPTIMAL
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_swapchain->getImage(m_currentImageIndex);
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    // Begin render pass
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = m_renderPass;
+    renderPassInfo.framebuffer = m_swapchain->getFramebuffer(m_currentImageIndex);
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = m_swapchain->getExtent();
+
+    // Clear values
+    std::array<VkClearValue, 1> clearValues{};
+    clearValues[0].color = {{0.1f, 0.1f, 0.15f, 1.0f}};  // Dark blue-gray background
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
     m_frameStarted = true;
     return true;
 }
@@ -352,6 +447,18 @@ void VulkanContext::endFrame() {
         return;
     }
 
+    VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
+
+    // End render pass
+    vkCmdEndRenderPass(cmd);
+
+    // End command buffer
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        std::cerr << "Failed to end command buffer" << std::endl;
+        return;
+    }
+
+    // Submit command buffer
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -360,6 +467,8 @@ void VulkanContext::endFrame() {
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrame];
 
@@ -370,6 +479,7 @@ void VulkanContext::endFrame() {
         return;
     }
 
+    // Present
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
@@ -412,6 +522,10 @@ VkExtent2D VulkanContext::getSwapchainExtent() const {
 
 VkFormat VulkanContext::getSwapchainFormat() const {
     return m_swapchain ? m_swapchain->getFormat() : VK_FORMAT_UNDEFINED;
+}
+
+VkCommandBuffer VulkanContext::getCurrentCommandBuffer() const {
+    return m_commandBuffers[m_currentFrame];
 }
 
 } // namespace skia_renderer
