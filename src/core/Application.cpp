@@ -97,6 +97,7 @@ void Application::run() {
     auto lastTime = std::chrono::high_resolution_clock::now();
     int frameCount = 0;
     float fpsTimer = 0.0f;
+    float currentFPS = 0.0f;
 
     while (m_impl->running) {
         // Calculate delta time
@@ -107,8 +108,9 @@ void Application::run() {
         // FPS calculation
         frameCount++;
         fpsTimer += deltaTime;
-        if (fpsTimer >= 1.0f) {
-            // Could output FPS here if desired
+        if (fpsTimer >= 0.5f) {  // Update FPS every 0.5 seconds
+            currentFPS = frameCount / fpsTimer;
+            m_impl->skiaRenderer->setFPS(currentFPS);
             frameCount = 0;
             fpsTimer = 0.0f;
         }
