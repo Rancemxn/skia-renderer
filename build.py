@@ -165,7 +165,7 @@ def build_project(args):
     if not vkb_dir.exists():
         vkb_dir = deps_dir / "vk-bootstrap"
     
-    vma_dir = args.vma_path or deps_dir / "VulkanMemoryAllocator"
+    # Note: VMA is built into Skia, no separate path needed
     
     print("Configuration:")
     print(f"  Build Type: {args.build_type}")
@@ -179,7 +179,7 @@ def build_project(args):
     print(f"  SDL3: {sdl3_dir}")
     print(f"  Skia: {skia_dir}")
     print(f"  vk-bootstrap: {vkb_dir}")
-    print(f"  VMA: {vma_dir}")
+    print("  VMA: (built into Skia)")
     print()
     
     # Clean if requested
@@ -214,7 +214,7 @@ def build_project(args):
     cmd.append(f"-DSDL3_DIR={sdl3_dir}")
     cmd.append(f"-DSKIA_DIR={skia_dir}")
     cmd.append(f"-DVKBOOTSTRAP_DIR={vkb_dir}")
-    cmd.append(f"-DVMA_DIR={vma_dir}")
+    # VMA is built into Skia, no separate VMA_DIR needed
     
     if args.cmake_args:
         cmd.extend(args.cmake_args.split())
@@ -272,7 +272,7 @@ def main():
     parser.add_argument("--sdl3-path", help="SDL3 path")
     parser.add_argument("--skia-path", help="Skia path")
     parser.add_argument("--vkbootstrap-path", help="vk-bootstrap path")
-    parser.add_argument("--vma-path", help="VulkanMemoryAllocator path")
+    # Note: VMA is built into Skia, use skia_use_vma=True in build_deps.py
     parser.add_argument("--cmake-args", help="Extra CMake arguments")
     
     args = parser.parse_args()
