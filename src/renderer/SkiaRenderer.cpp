@@ -139,8 +139,8 @@ bool SkiaRenderer::checkDirectRenderingSupported() const {
     std::cout << "    SAMPLED_BIT: " << (hasSampled ? "yes" : "no") << std::endl;
     std::cout << "    INPUT_ATTACHMENT_BIT: " << (hasInputAttachment ? "yes" : "no") << std::endl;
 
-    // Skia Graphite needs at least SAMPLED_BIT for direct rendering
-    return hasSampled;
+    // Skia Graphite needs BOTH SAMPLED_BIT and INPUT_ATTACHMENT_BIT for direct rendering
+    return hasSampled && hasInputAttachment;
 }
 
 void SkiaRenderer::shutdown() {
