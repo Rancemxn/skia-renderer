@@ -1,8 +1,8 @@
 #include "Swapchain.h"
 
-#include <iostream>
 #include <algorithm>
-#include <array>
+#include <iostream>
+#include <limits>
 
 namespace skia_renderer {
 
@@ -35,7 +35,7 @@ bool Swapchain::initialize(
         return false;
     }
 
-    // Only create framebuffers if render pass is provided (not for Skia Graphite)
+    // Only create framebuffers if render pass is valid (not for Skia Graphite)
     if (m_renderPass != VK_NULL_HANDLE) {
         if (!createFramebuffers()) {
             return false;
@@ -50,48 +50,47 @@ void Swapchain::shutdown() {
     if (!m_initialized) {
         return;
     }
-
     cleanup();
     m_initialized = false;
 }
 
+void Swapchain::recreate(int width, int height) {
+    if (!m_initialized) {
+        return;
+    }
+    vkDeviceWaitIdle(m_device);
+    cleanup();
+    createSwapchain(width, height);
+    createImageViews();
+    if (m_renderPass != VK_NULL_HANDLE) {
+        createFramebuffers();
+    }
+}
+
 void Swapchain::cleanup() {
-    // Cleanup framebuffers
-    for (auto framebuffer : m_framebuffers) {
-        if (framebuffer != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    // Destroy framebuffers
+    for (auto fb : m_framebuffers) {
+        if (fb != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(m_device, fb, nullptr);
         }
     }
     m_framebuffers.clear();
 
-    // Cleanup image views
-    for (auto imageView : m_imageViews) {
-        if (imageView != VK_NULL_HANDLE) {
-            vkDestroyImageView(m_device, imageView, nullptr);
+    // Destroy image views
+    for (auto iv : m_imageViews) {
+        if (iv != VK_NULL_HANDLE) {
+            vkDestroyImageView(m_device, iv, nullptr);
         }
     }
     m_imageViews.clear();
 
-    // Images are owned by swapchain, no need to destroy them
+    // Images are owned by swapchain
     m_images.clear();
 
-    // Cleanup swapchain
+    // Destroy swapchain
     if (m_swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
         m_swapchain = VK_NULL_HANDLE;
-    }
-}
-
-void Swapchain::recreate(int width, int height) {
-    vkDeviceWaitIdle(m_device);
-    
-    cleanup();
-    
-    createSwapchain(width, height);
-    createImageViews();
-    
-    if (m_renderPass != VK_NULL_HANDLE) {
-        createFramebuffers();
     }
 }
 
@@ -113,28 +112,24 @@ bool Swapchain::createSwapchain(int width, int height) {
     vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
 
     // Choose surface format - prefer UNORM over SRGB for Skia Graphite compatibility
-    // Skia Graphite's WrapBackendTexture validation skips sRGB formats
     VkSurfaceFormatKHR surfaceFormat = formats[0];
-    for (const auto& format : formats) {
-        // Prefer BGRA8_UNORM for best compatibility with Skia Graphite
-        if (format.format == VK_FORMAT_B8G8R8A8_UNORM) {
-            surfaceFormat = format;
+    for (const auto& fmt : formats) {
+        if (fmt.format == VK_FORMAT_B8G8R8A8_UNORM) {
+            surfaceFormat = fmt;
             break;
         }
     }
-    // Fall back to first available if UNORM not found
     if (surfaceFormat.format != VK_FORMAT_B8G8R8A8_UNORM) {
-        for (const auto& format : formats) {
-            // Try RGBA8_UNORM as second choice
-            if (format.format == VK_FORMAT_R8G8B8A8_UNORM) {
-                surfaceFormat = format;
+        for (const auto& fmt : formats) {
+            if (fmt.format == VK_FORMAT_R8G8B8A8_UNORM) {
+                surfaceFormat = fmt;
                 break;
             }
         }
     }
     m_format = surfaceFormat.format;
 
-    // Choose present mode (prefer mailbox for low latency)
+    // Choose present mode
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     for (const auto& mode : presentModes) {
         if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
@@ -144,10 +139,10 @@ bool Swapchain::createSwapchain(int width, int height) {
     }
 
     // Choose extent
-    if (capabilities.currentExtent.width != UINT32_MAX) {
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         m_extent = capabilities.currentExtent;
     } else {
-        m_extent.width = std::clamp(static_cast<uint32_t>(width), 
+        m_extent.width = std::clamp(static_cast<uint32_t>(width),
                                     capabilities.minImageExtent.width,
                                     capabilities.maxImageExtent.width);
         m_extent.height = std::clamp(static_cast<uint32_t>(height),
@@ -155,19 +150,18 @@ bool Swapchain::createSwapchain(int width, int height) {
                                      capabilities.maxImageExtent.height);
     }
 
-    // Get image count (try for triple buffering)
+    // Image count
     uint32_t imageCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
         imageCount = capabilities.maxImageCount;
     }
 
-    // Build usage flags - start with required flags for Skia Graphite
-    // Based on Skia's GraphiteNativeVulkanWindowContext.cpp
+    // Build usage flags for Skia Graphite
     VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     
-    // Add optional flags if supported by the surface
+    // Add optional flags if supported
     if (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) {
         usageFlags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
     }
@@ -175,12 +169,10 @@ bool Swapchain::createSwapchain(int width, int height) {
         usageFlags |= VK_IMAGE_USAGE_SAMPLED_BIT;
     }
     
+    m_imageUsageFlags = usageFlags;
     std::cout << "Swapchain usage flags: 0x" << std::hex << usageFlags << std::dec << std::endl;
 
-    // Store usage flags for later use (e.g., Skia Graphite texture creation)
-    m_imageUsageFlags = usageFlags;
-
-    // Create swapchain with usage flags suitable for Skia Graphite
+    // Create swapchain
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     createInfo.surface = m_surface;
@@ -196,13 +188,12 @@ bool Swapchain::createSwapchain(int width, int height) {
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    VkResult result = vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain);
-    if (result != VK_SUCCESS) {
-        std::cerr << "Failed to create swapchain: " << result << std::endl;
+    if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain) != VK_SUCCESS) {
+        std::cerr << "Failed to create swapchain" << std::endl;
         return false;
     }
 
-    // Get swapchain images
+    // Get images
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr);
     m_images.resize(imageCount);
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_images.data());
@@ -232,9 +223,8 @@ bool Swapchain::createImageViews() {
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
-        VkResult result = vkCreateImageView(m_device, &createInfo, nullptr, &m_imageViews[i]);
-        if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create image view " << i << ": " << result << std::endl;
+        if (vkCreateImageView(m_device, &createInfo, nullptr, &m_imageViews[i]) != VK_SUCCESS) {
+            std::cerr << "Failed to create image view " << i << std::endl;
             return false;
         }
     }
@@ -244,7 +234,7 @@ bool Swapchain::createImageViews() {
 
 bool Swapchain::createFramebuffers() {
     if (m_renderPass == VK_NULL_HANDLE) {
-        return true;  // No render pass, no framebuffers needed
+        return true;
     }
 
     m_framebuffers.resize(m_imageViews.size());
@@ -252,18 +242,17 @@ bool Swapchain::createFramebuffers() {
     for (size_t i = 0; i < m_imageViews.size(); i++) {
         VkImageView attachments[] = {m_imageViews[i]};
 
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = m_renderPass;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments = attachments;
-        framebufferInfo.width = m_extent.width;
-        framebufferInfo.height = m_extent.height;
-        framebufferInfo.layers = 1;
+        VkFramebufferCreateInfo fbInfo{};
+        fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbInfo.renderPass = m_renderPass;
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments = attachments;
+        fbInfo.width = m_extent.width;
+        fbInfo.height = m_extent.height;
+        fbInfo.layers = 1;
 
-        VkResult result = vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_framebuffers[i]);
-        if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create framebuffer " << i << ": " << result << std::endl;
+        if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS) {
+            std::cerr << "Failed to create framebuffer " << i << std::endl;
             return false;
         }
     }
@@ -275,7 +264,7 @@ VkResult Swapchain::acquireNextImage(VkSemaphore semaphore, VkFence fence, uint3
     return vkAcquireNextImageKHR(
         m_device,
         m_swapchain,
-        UINT64_MAX,
+        std::numeric_limits<uint64_t>::max(),
         semaphore,
         fence,
         imageIndex);
