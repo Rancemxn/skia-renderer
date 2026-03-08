@@ -927,7 +927,21 @@ void SkiaRenderer::render() {
         paint.setColor(SkColorSetARGB(180, 200, 200, 200));
 
         std::string modeStr = m_useOffscreenRendering ? "Mode: Offscreen + Blit" : "Mode: Direct Rendering";
-        canvas->drawString(modeStr.c_str(), 20, extent.height - 65, m_impl->smallFont, paint);
+        canvas->drawString(modeStr.c_str(), 20, extent.height - 85, m_impl->smallFont, paint);
+        
+        // Display present mode
+        const char* presentModeStr = "Unknown";
+        VkPresentModeKHR presentMode = m_context->getSwapchain()->getPresentMode();
+        switch (presentMode) {
+            case VK_PRESENT_MODE_MAILBOX_KHR: presentModeStr = "Mailbox"; break;
+            case VK_PRESENT_MODE_IMMEDIATE_KHR: presentModeStr = "Immediate"; break;
+            case VK_PRESENT_MODE_FIFO_RELAXED_KHR: presentModeStr = "FIFO Relaxed"; break;
+            case VK_PRESENT_MODE_FIFO_KHR: presentModeStr = "FIFO (VSync)"; break;
+            default: break;
+        }
+        std::string presentStr = std::string("Present: ") + presentModeStr;
+        canvas->drawString(presentStr.c_str(), 20, extent.height - 65, m_impl->smallFont, paint);
+        
         canvas->drawString("Renderer: Skia Graphite", 20, extent.height - 45, m_impl->smallFont, paint);
         canvas->drawString("Press ESC to exit", 20, extent.height - 25, m_impl->smallFont, paint);
     } else {
@@ -940,7 +954,20 @@ void SkiaRenderer::render() {
         fallbackFont.setSize(14);
         paint.setColor(SkColorSetARGB(180, 200, 200, 200));
         std::string modeStr = m_useOffscreenRendering ? "Mode: Offscreen + Blit" : "Mode: Direct Rendering";
-        canvas->drawString(modeStr.c_str(), 20, extent.height - 65, fallbackFont, paint);
+        canvas->drawString(modeStr.c_str(), 20, extent.height - 85, fallbackFont, paint);
+        
+        const char* presentModeStr = "Unknown";
+        VkPresentModeKHR presentMode = m_context->getSwapchain()->getPresentMode();
+        switch (presentMode) {
+            case VK_PRESENT_MODE_MAILBOX_KHR: presentModeStr = "Mailbox"; break;
+            case VK_PRESENT_MODE_IMMEDIATE_KHR: presentModeStr = "Immediate"; break;
+            case VK_PRESENT_MODE_FIFO_RELAXED_KHR: presentModeStr = "FIFO Relaxed"; break;
+            case VK_PRESENT_MODE_FIFO_KHR: presentModeStr = "FIFO (VSync)"; break;
+            default: break;
+        }
+        std::string presentStr = std::string("Present: ") + presentModeStr;
+        canvas->drawString(presentStr.c_str(), 20, extent.height - 65, fallbackFont, paint);
+        
         canvas->drawString("Renderer: Skia Graphite", 20, extent.height - 45, fallbackFont, paint);
         canvas->drawString("Press ESC to exit", 20, extent.height - 25, fallbackFont, paint);
     }
