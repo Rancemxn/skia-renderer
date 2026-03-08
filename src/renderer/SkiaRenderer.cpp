@@ -64,9 +64,10 @@ struct SkiaRenderer::Impl {
         VkFence skiaFinishedFence = VK_NULL_HANDLE;
     } offscreenRT;
 
-    // Blit resources (for fallback mode)
+    // Blit resources (for fallback mode) - per swapchain image
     VkCommandPool blitCommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer blitCommandBuffer = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> blitCommandBuffers;
+    std::vector<VkFence> blitFences;
 
     // Timing for animation
     std::chrono::high_resolution_clock::time_point startTime;
@@ -159,6 +160,17 @@ void SkiaRenderer::shutdown() {
 
     // Cleanup offscreen resources
     destroyOffscreenRenderTarget();
+
+    // Cleanup blit fences
+    for (auto fence : m_impl->blitFences) {
+        if (fence != VK_NULL_HANDLE) {
+            vkDestroyFence(device, fence, nullptr);
+        }
+    }
+    m_impl->blitFences.clear();
+
+    // Command buffers are freed with the pool
+    m_impl->blitCommandBuffers.clear();
 
     if (m_impl->blitCommandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(device, m_impl->blitCommandPool, nullptr);
@@ -531,6 +543,7 @@ void SkiaRenderer::destroyOffscreenRenderTarget() {
 
 bool SkiaRenderer::createBlitResources() {
     VkDevice device = m_context->getDevice();
+    size_t imageCount = m_context->getSwapchain()->getImageCount();
 
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -542,19 +555,33 @@ bool SkiaRenderer::createBlitResources() {
         return false;
     }
 
+    // Allocate one command buffer per swapchain image
+    m_impl->blitCommandBuffers.resize(imageCount);
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = m_impl->blitCommandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
+    allocInfo.commandBufferCount = static_cast<uint32_t>(imageCount);
 
-    if (vkAllocateCommandBuffers(device, &allocInfo, &m_impl->blitCommandBuffer) != VK_SUCCESS) {
-        std::cerr << "  Failed to allocate blit command buffer" << std::endl;
+    if (vkAllocateCommandBuffers(device, &allocInfo, m_impl->blitCommandBuffers.data()) != VK_SUCCESS) {
+        std::cerr << "  Failed to allocate blit command buffers" << std::endl;
         return false;
     }
 
+    // Create one fence per swapchain image for synchronization
+    m_impl->blitFences.resize(imageCount);
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;  // Start signaled so first frame doesn't wait
+
+    for (size_t i = 0; i < imageCount; i++) {
+        if (vkCreateFence(device, &fenceInfo, nullptr, &m_impl->blitFences[i]) != VK_SUCCESS) {
+            std::cerr << "  Failed to create blit fence " << i << std::endl;
+            return false;
+        }
+    }
+
     // Create per-swapchain-image semaphores for blit completion
-    size_t imageCount = m_context->getSwapchain()->getImageCount();
     m_impl->swapchainImages.resize(imageCount);
 
     VkSemaphoreCreateInfo semInfo{};
@@ -568,22 +595,31 @@ bool SkiaRenderer::createBlitResources() {
         }
     }
 
-    std::cout << "  Blit resources created" << std::endl;
+    std::cout << "  Blit resources created (" << imageCount << " command buffers, fences)" << std::endl;
     return true;
 }
 
 void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) {
+    VkDevice device = m_context->getDevice();
     uint32_t imageIndex = m_context->getCurrentImageIndex();
     VkImage dstImage = m_context->getSwapchain()->getImage(imageIndex);
     VkExtent2D extent = m_context->getSwapchainExtent();
 
+    // Get per-image command buffer and fence
+    VkCommandBuffer cmdBuffer = m_impl->blitCommandBuffers[imageIndex];
+    VkFence fence = m_impl->blitFences[imageIndex];
+
+    // Wait for previous use of this command buffer to complete
+    vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(device, 1, &fence);
+
     // Reset and begin command buffer
-    vkResetCommandBuffer(m_impl->blitCommandBuffer, 0);
+    vkResetCommandBuffer(cmdBuffer, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(m_impl->blitCommandBuffer, &beginInfo);
+    vkBeginCommandBuffer(cmdBuffer, &beginInfo);
 
     // Transition src image to TRANSFER_SRC
     VkImageMemoryBarrier2 srcBarrier{};
@@ -626,7 +662,7 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     depInfo.imageMemoryBarrierCount = 2;
     VkImageMemoryBarrier2 barriers[] = {srcBarrier, dstBarrier};
     depInfo.pImageMemoryBarriers = barriers;
-    vkCmdPipelineBarrier2(m_impl->blitCommandBuffer, &depInfo);
+    vkCmdPipelineBarrier2(cmdBuffer, &depInfo);
 
     // Blit
     VkImageBlit2 blitRegion{};
@@ -654,7 +690,7 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     blitInfo.pRegions = &blitRegion;
     blitInfo.filter = VK_FILTER_LINEAR;
 
-    vkCmdBlitImage2(m_impl->blitCommandBuffer, &blitInfo);
+    vkCmdBlitImage2(cmdBuffer, &blitInfo);
 
     // Transition dst image to PRESENT_SRC
     VkImageMemoryBarrier2 presentBarrier{};
@@ -678,9 +714,9 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     presentDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     presentDepInfo.imageMemoryBarrierCount = 1;
     presentDepInfo.pImageMemoryBarriers = &presentBarrier;
-    vkCmdPipelineBarrier2(m_impl->blitCommandBuffer, &presentDepInfo);
+    vkCmdPipelineBarrier2(cmdBuffer, &presentDepInfo);
 
-    vkEndCommandBuffer(m_impl->blitCommandBuffer);
+    vkEndCommandBuffer(cmdBuffer);
 
     // Submit with synchronization
     VkSemaphoreSubmitInfo waitInfo{};
@@ -690,7 +726,7 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
 
     VkCommandBufferSubmitInfo cmdInfo{};
     cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    cmdInfo.commandBuffer = m_impl->blitCommandBuffer;
+    cmdInfo.commandBuffer = cmdBuffer;
 
     VkSemaphoreSubmitInfo signalInfo{};
     signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
@@ -706,7 +742,8 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     submitInfo.signalSemaphoreInfoCount = 1;
     submitInfo.pSignalSemaphoreInfos = &signalInfo;
 
-    vkQueueSubmit2(m_context->getGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    // Submit with fence for synchronization
+    vkQueueSubmit2(m_context->getGraphicsQueue(), 1, &submitInfo, fence);
 }
 
 void SkiaRenderer::render() {
