@@ -177,6 +177,9 @@ bool Swapchain::createSwapchain(int width, int height) {
     
     std::cout << "Swapchain usage flags: 0x" << std::hex << usageFlags << std::dec << std::endl;
 
+    // Store usage flags for later use (e.g., Skia Graphite texture creation)
+    m_imageUsageFlags = usageFlags;
+
     // Create swapchain with usage flags suitable for Skia Graphite
     VkSwapchainCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
