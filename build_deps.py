@@ -1,6 +1,10 @@
 """
 Skia Renderer - Build Dependencies
 Builds SDL3, vk-bootstrap, Skia with LLVM/Clang + Ninja + sccache
+
+Build outputs are separated by build type:
+- SDL3/vk-bootstrap: deps/installed/{Debug,Release}/
+- Skia: deps/skia/out/{Debug,Release}/
 """
 
 import os
@@ -118,10 +122,18 @@ def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
                      sccache: str = None, extra_args: list = None) -> bool:
     """Build a project with CMake using LLVM/Clang + Ninja + sccache"""
     
+    # Only clean if explicitly requested or if build type changed
     if build_dir.exists():
-        shutil.rmtree(build_dir, onerror=remove_readonly)
-    build_dir.mkdir(parents=True)
+        # Check if build type matches
+        cmake_cache = build_dir / "CMakeCache.txt"
+        if cmake_cache.exists():
+            with open(cmake_cache, 'r') as f:
+                cache_content = f.read()
+                if f"CMAKE_BUILD_TYPE:STRING={build_type}" not in cache_content:
+                    print(f"  Build type changed, cleaning build directory...")
+                    shutil.rmtree(build_dir, onerror=remove_readonly)
     
+    build_dir.mkdir(parents=True, exist_ok=True)
     
     # CMake configure
     cmd = [
@@ -136,8 +148,6 @@ def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
     if platform.system() == "Windows":
         runtime_lib = "MultiThreaded" if build_type == "Release" else "MultiThreadedDebug"
         cmd.append(f"-DCMAKE_MSVC_RUNTIME_LIBRARY={runtime_lib}")
-        
-        
     
     # Add sccache as compiler launcher
     if sccache:
@@ -156,7 +166,7 @@ def build_with_cmake(source_dir: Path, build_dir: Path, install_dir: Path,
     run_cmd(build_cmd)
     
     # Install
-    print("  Installing...")
+    print(f"  Installing to {install_dir}...")
     install_cmd = ["cmake", "--install", str(build_dir), "--config", build_type]
     run_cmd(install_cmd)
     
@@ -287,9 +297,15 @@ def build_skia(skia_dir: Path, build_type: str, skia_args: dict,
     print(f"  GN args: {gn_args_str}")
     
     out_dir = skia_dir / "out" / build_type
+    # Don't clean if already built with same type
     if out_dir.exists():
-        shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
+        cmake_cache = out_dir / "args.gn"
+        if cmake_cache.exists():
+            with open(cmake_cache, 'r') as f:
+                if f"target_cpu" in f.read():
+                    print(f"  Using existing build directory: {out_dir}")
+    
+    out_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate
     print("  Generating...")
@@ -305,13 +321,22 @@ def build_deps(args):
     """Main build function"""
     script_dir = Path(__file__).parent.resolve()
     deps_dir = script_dir / "deps"
-    build_dir = script_dir / "build_deps"
-    install_dir = deps_dir / "installed"
+    build_base = script_dir / "build_deps"
     depot_tools = deps_dir / "depot_tools"
     
-    print("=" * 50)
+    build_type = args.build_type
+    
+    # Build-type-specific directories
+    build_dir = build_base / build_type
+    install_dir = deps_dir / "installed" / build_type
+    
+    print("=" * 60)
     print("Skia Renderer - Building Dependencies")
-    print("=" * 50)
+    print("=" * 60)
+    print()
+    print(f"Build Type: {build_type}")
+    print(f"Build Dir:  {build_dir}")
+    print(f"Install Dir: {install_dir}")
     print()
     
     # Find LLVM (required)
@@ -347,14 +372,13 @@ def build_deps(args):
     
     print()
     
-    build_type = args.build_type
     install_dir.mkdir(parents=True, exist_ok=True)
     
     # Build SDL3
     if not args.skip_sdl:
-        print("=" * 50)
+        print("=" * 60)
         print("[1/3] SDL3")
-        print("=" * 50)
+        print("=" * 60)
         
         sdl_dir = deps_dir / "SDL3"
         if not sdl_dir.exists():
@@ -376,9 +400,9 @@ def build_deps(args):
     
     # Build vk-bootstrap
     if not args.skip_vkbootstrap:
-        print("=" * 50)
+        print("=" * 60)
         print("[2/3] vk-bootstrap")
-        print("=" * 50)
+        print("=" * 60)
         
         vkb_dir = deps_dir / "vk-bootstrap"
         if not vkb_dir.exists():
@@ -397,9 +421,9 @@ def build_deps(args):
     
     # Build Skia
     if not args.skip_skia:
-        print("=" * 50)
+        print("=" * 60)
         print("[3/3] Skia")
-        print("=" * 50)
+        print("=" * 60)
         
         skia_dir = deps_dir / "skia"
         if not skia_dir.exists():
@@ -423,25 +447,32 @@ def build_deps(args):
         print()
     
     # Summary
-    print("=" * 50)
+    print("=" * 60)
     print("Dependency Build Complete!")
-    print("=" * 50)
+    print("=" * 60)
     print()
     
     lib_ext = ".lib" if platform.system() == "Windows" else ".a"
     libs = [
         (install_dir / "lib" / f"SDL3{lib_ext}", f"SDL3{lib_ext}"),
-        (install_dir / "lib" / f"SDL3d{lib_ext}", f"SDL3d{lib_ext} (Debug)"),
         (install_dir / "lib" / f"vk-bootstrap{lib_ext}", f"vk-bootstrap{lib_ext}"),
         (deps_dir / "skia" / "out" / build_type / f"skia{lib_ext}", f"skia{lib_ext}"),
     ]
     
-    print("Built libraries:")
+    print(f"Built libraries ({build_type}):")
     for path, name in libs:
         if path.exists():
-            print(f"  [OK] {name}")
+            size_mb = path.stat().st_size / (1024 * 1024)
+            print(f"  [OK] {name} ({size_mb:.1f} MB)")
+        else:
+            print(f"  [MISSING] {name}")
     print()
-    print("Next: python build.py")
+    
+    print("Directory structure:")
+    print(f"  deps/installed/{build_type}/  - SDL3, vk-bootstrap")
+    print(f"  deps/skia/out/{build_type}/   - Skia")
+    print()
+    print(f"Next: python build.py --build-type {build_type}")
     print()
     
     return 0

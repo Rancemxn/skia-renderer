@@ -23,6 +23,15 @@ if(WIN32)
 endif()
 
 # ========================================
+# Build Type Detection
+# ========================================
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif()
+string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWER)
+message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
+
+# ========================================
 # Vulkan SDK
 # ========================================
 # Allow custom Vulkan SDK path via command line
@@ -41,23 +50,18 @@ message(STATUS "Vulkan Library: ${Vulkan_LIBRARIES}")
 if(USE_SYSTEM_SDL)
     find_package(SDL3 REQUIRED)
 else()
-    # Check for SDL3_DIR from command line or in deps
+    # Priority: command line > build-type-specific install > generic install > source
     if(DEFINED SDL3_DIR)
         find_package(SDL3 REQUIRED HINTS "${SDL3_DIR}")
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/SDL3")
-        # Check for pre-built SDL3 in deps
-        if(EXISTS "${CMAKE_SOURCE_DIR}/deps/SDL3/lib/cmake/SDL3/SDL3Config.cmake")
-            find_package(SDL3 REQUIRED HINTS "${CMAKE_SOURCE_DIR}/deps/SDL3/lib/cmake/SDL3")
-        elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/SDL3/cmake/SDL3Config.cmake")
-            find_package(SDL3 REQUIRED HINTS "${CMAKE_SOURCE_DIR}/deps/SDL3/cmake")
-        elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/installed/lib/cmake/SDL3")
-            find_package(SDL3 REQUIRED HINTS "${CMAKE_SOURCE_DIR}/deps/installed/lib/cmake/SDL3")
-        else()
-            # Try to find SDL3 in system paths
-            find_package(SDL3 REQUIRED)
-        endif()
     else()
-        find_package(SDL3 REQUIRED)
+        # Build-type-specific install directory (preferred)
+        set(SDL3_HINTS 
+            "${CMAKE_SOURCE_DIR}/deps/installed/${CMAKE_BUILD_TYPE}/lib/cmake/SDL3"
+            "${CMAKE_SOURCE_DIR}/deps/installed/lib/cmake/SDL3"
+            "${CMAKE_SOURCE_DIR}/deps/SDL3/lib/cmake/SDL3"
+            "${CMAKE_SOURCE_DIR}/deps/SDL3/cmake"
+        )
+        find_package(SDL3 REQUIRED HINTS ${SDL3_HINTS})
     endif()
 endif()
 message(STATUS "SDL3 Found: ${SDL3_FOUND}")
@@ -69,55 +73,34 @@ message(STATUS "SDL3 Include: ${SDL3_INCLUDE_DIRS}")
 if(USE_SYSTEM_VK_BOOTSTRAP)
     find_package(vk-bootstrap REQUIRED)
 else()
-    # Check for VKBOOTSTRAP_DIR from command line
     if(DEFINED VKBOOTSTRAP_DIR)
-        find_path(VK_BOOTSTRAP_INCLUDE_DIR 
-            NAMES VkBootstrap.h 
-            HINTS "${VKBOOTSTRAP_DIR}/include" 
-                  "${VKBOOTSTRAP_DIR}/include/vk-bootstrap"
-            PATH_SUFFIXES vk-bootstrap)
-        # Prioritize based on build type
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            find_library(VK_BOOTSTRAP_LIBRARY 
-                NAMES vk-bootstrap vk-bootstrap-static 
-                HINTS "${VKBOOTSTRAP_DIR}/lib/Debug" 
-                      "${VKBOOTSTRAP_DIR}/lib"
-                      "${VKBOOTSTRAP_DIR}/lib/${CMAKE_BUILD_TYPE}"
-                PATH_SUFFIXES Debug Release)
-        else()
-            find_library(VK_BOOTSTRAP_LIBRARY 
-                NAMES vk-bootstrap vk-bootstrap-static 
-                HINTS "${VKBOOTSTRAP_DIR}/lib/Release" 
-                      "${VKBOOTSTRAP_DIR}/lib"
-                      "${VKBOOTSTRAP_DIR}/lib/${CMAKE_BUILD_TYPE}"
-                PATH_SUFFIXES Release Debug)
-        endif()
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap")
-        find_path(VK_BOOTSTRAP_INCLUDE_DIR 
-            NAMES VkBootstrap.h 
-            HINTS "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap/include"
-                  "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap/include/vk-bootstrap"
-            PATH_SUFFIXES vk-bootstrap)
-        find_library(VK_BOOTSTRAP_LIBRARY 
-            NAMES vk-bootstrap vk-bootstrap-static 
-            HINTS "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap/build"
-                  "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap/build/${CMAKE_BUILD_TYPE}"
-                  "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap/lib"
-                  "${CMAKE_SOURCE_DIR}/deps/installed/lib"
-            PATH_SUFFIXES Release Debug)
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/deps/installed")
-        find_path(VK_BOOTSTRAP_INCLUDE_DIR 
-            NAMES VkBootstrap.h 
-            HINTS "${CMAKE_SOURCE_DIR}/deps/installed/include"
-            PATH_SUFFIXES vk-bootstrap)
-        find_library(VK_BOOTSTRAP_LIBRARY 
-            NAMES vk-bootstrap vk-bootstrap-static 
-            HINTS "${CMAKE_SOURCE_DIR}/deps/installed/lib"
-            PATH_SUFFIXES Release Debug)
+        # Command line specified path
+        set(VK_BOOTSTRAP_SEARCH_PATHS "${VKBOOTSTRAP_DIR}")
     else()
-        find_package(vk-bootstrap REQUIRED)
+        # Build-type-specific paths (priority order)
+        set(VK_BOOTSTRAP_SEARCH_PATHS
+            "${CMAKE_SOURCE_DIR}/deps/installed/${CMAKE_BUILD_TYPE}"
+            "${CMAKE_SOURCE_DIR}/deps/installed"
+            "${CMAKE_SOURCE_DIR}/deps/vk-bootstrap"
+        )
     endif()
+    
+    find_path(VK_BOOTSTRAP_INCLUDE_DIR 
+        NAMES VkBootstrap.h 
+        HINTS ${VK_BOOTSTRAP_SEARCH_PATHS}
+        PATH_SUFFIXES include include/vk-bootstrap vk-bootstrap)
+    
+    # Find library with build-type-specific naming
+    find_library(VK_BOOTSTRAP_LIBRARY 
+        NAMES vk-bootstrap vk-bootstrap-static 
+        HINTS ${VK_BOOTSTRAP_SEARCH_PATHS}
+        PATH_SUFFIXES lib lib/${CMAKE_BUILD_TYPE} ${CMAKE_BUILD_TYPE})
 endif()
+
+if(NOT VK_BOOTSTRAP_INCLUDE_DIR OR NOT VK_BOOTSTRAP_LIBRARY)
+    message(FATAL_ERROR "vk-bootstrap not found. Run: python build_deps.py --build-type ${CMAKE_BUILD_TYPE}")
+endif()
+
 message(STATUS "vk-bootstrap Include: ${VK_BOOTSTRAP_INCLUDE_DIR}")
 message(STATUS "vk-bootstrap Library: ${VK_BOOTSTRAP_LIBRARY}")
 
@@ -125,43 +108,30 @@ message(STATUS "vk-bootstrap Library: ${VK_BOOTSTRAP_LIBRARY}")
 # Skia
 # ========================================
 # Skia's header structure: headers are directly in root (e.g., skia/core/SkSurface.h)
-# not in skia/include/core/ like typical projects
 # Note: VMA is now managed internally by Skia, no need to link separately
 if(USE_SYSTEM_SKIA)
     find_path(SKIA_INCLUDE_DIR NAMES core/SkSurface.h)
     find_library(SKIA_LIBRARY NAMES skia)
 else()
     if(DEFINED SKIA_DIR)
-        # Skia headers are in the root directory
         set(SKIA_INCLUDE_DIR "${SKIA_DIR}")
-        # Prioritize based on build type
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            find_library(SKIA_LIBRARY NAMES skia 
-                HINTS "${SKIA_DIR}/out/Debug" "${SKIA_DIR}/out/Release")
-        else()
-            find_library(SKIA_LIBRARY NAMES skia 
-                HINTS "${SKIA_DIR}/out/Release" "${SKIA_DIR}/out/Debug")
-        endif()
+        set(SKIA_LIB_HINTS "${SKIA_DIR}/out/${CMAKE_BUILD_TYPE}" "${SKIA_DIR}/out")
     else()
         set(SKIA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/deps/skia")
-        # Prioritize based on build type
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            find_library(SKIA_LIBRARY NAMES skia 
-                HINTS "${CMAKE_SOURCE_DIR}/deps/skia/out/Debug" 
-                      "${CMAKE_SOURCE_DIR}/deps/skia/out/Release")
-        else()
-            find_library(SKIA_LIBRARY NAMES skia 
-                HINTS "${CMAKE_SOURCE_DIR}/deps/skia/out/Release" 
-                      "${CMAKE_SOURCE_DIR}/deps/skia/out/Debug")
-        endif()
+        set(SKIA_LIB_HINTS 
+            "${CMAKE_SOURCE_DIR}/deps/skia/out/${CMAKE_BUILD_TYPE}"
+            "${CMAKE_SOURCE_DIR}/deps/skia/out")
     endif()
+    
+    find_library(SKIA_LIBRARY NAMES skia HINTS ${SKIA_LIB_HINTS})
 endif()
-message(STATUS "Skia Include: ${SKIA_INCLUDE_DIR}")
-message(STATUS "Skia Library: ${SKIA_LIBRARY}")
 
 if(NOT SKIA_LIBRARY)
-    message(WARNING "Skia library not found. Build it with build_deps.bat")
+    message(FATAL_ERROR "Skia library not found. Run: python build_deps.py --build-type ${CMAKE_BUILD_TYPE}")
 endif()
+
+message(STATUS "Skia Include: ${SKIA_INCLUDE_DIR}")
+message(STATUS "Skia Library: ${SKIA_LIBRARY}")
 
 # ========================================
 # Skia system dependencies (Linux/macOS)
@@ -222,15 +192,13 @@ if(WIN32)
     )
     
     # Skia Windows dependencies
-    if(SKIA_LIBRARY)
-        list(APPEND LINK_LIBS
-            fontsub
-            dwrite
-            d3d12
-            dxgi
-            opengl32
-        )
-    endif()
+    list(APPEND LINK_LIBS
+        fontsub
+        dwrite
+        d3d12
+        dxgi
+        opengl32
+    )
 else()
     # Linux/macOS libraries
     list(APPEND LINK_LIBS
@@ -258,7 +226,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         DEBUG_BUILD
         ENABLE_VULKAN_VALIDATION
         SK_DEBUG
-        
     )
     message(STATUS "Debug build: Vulkan validation enabled")
 endif()
@@ -284,7 +251,6 @@ if(MSVC)
         $<$<CONFIG:Debug>:/Od /Zi>
     )
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        #set_target_properties(${PROJECT_NAME} PROPERTIES STATIC_RUNTIME_LIBRARY_RELEASE "ON")
         target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
     endif()
 elseif(USING_CLANG_WIN)
@@ -311,23 +277,14 @@ else()
     )
 endif()
 
-
-
 # ========================================
 # RPATH for Unix
 # ========================================
 if(NOT WIN32)
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set_target_properties(${PROJECT_NAME} PROPERTIES
-            BUILD_RPATH "${CMAKE_SOURCE_DIR}/deps/SDL3/lib;${CMAKE_SOURCE_DIR}/deps/skia/out/Debug"
-            INSTALL_RPATH "$ORIGIN"
-        )
-    else()
-        set_target_properties(${PROJECT_NAME} PROPERTIES
-            BUILD_RPATH "${CMAKE_SOURCE_DIR}/deps/SDL3/lib;${CMAKE_SOURCE_DIR}/deps/skia/out/Release"
-            INSTALL_RPATH "$ORIGIN"
-        )
-    endif()
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        BUILD_RPATH "${CMAKE_SOURCE_DIR}/deps/installed/${CMAKE_BUILD_TYPE}/lib;${CMAKE_SOURCE_DIR}/deps/skia/out/${CMAKE_BUILD_TYPE}"
+        INSTALL_RPATH "$ORIGIN"
+    )
 endif()
 
 # ========================================
@@ -335,8 +292,11 @@ endif()
 # ========================================
 message(STATUS "")
 message(STATUS "==== Configuration Summary ====")
-message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "Generator: ${CMAKE_GENERATOR}")
+message(STATUS "Build Type:    ${CMAKE_BUILD_TYPE}")
+message(STATUS "C++ Standard:  ${CMAKE_CXX_STANDARD}")
+message(STATUS "Generator:     ${CMAKE_GENERATOR}")
+message(STATUS "SDL3:          ${SDL3_INCLUDE_DIRS}")
+message(STATUS "vk-bootstrap:  ${VK_BOOTSTRAP_LIBRARY}")
+message(STATUS "Skia:          ${SKIA_LIBRARY}")
 message(STATUS "================================")
 message(STATUS "")

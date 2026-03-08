@@ -1,6 +1,10 @@
 """
 Skia Renderer - Build Main Project
 Builds skia-renderer with LLVM/Clang + Ninja + sccache
+
+Build outputs are separated by build type:
+- Debug:   build/Debug/
+- Release: build/Release/
 """
 
 import os
@@ -112,13 +116,17 @@ def build_project(args):
     """Main build function"""
     script_dir = Path(__file__).parent.resolve()
     deps_dir = script_dir / "deps"
-    build_dir = script_dir / "build"
-    install_dir = deps_dir / "installed"
     depot_tools = deps_dir / "depot_tools"
     
-    print("=" * 50)
+    build_type = args.build_type
+    
+    # Build-type-specific directories
+    build_dir = script_dir / "build" / build_type
+    install_dir = deps_dir / "installed" / build_type
+    
+    print("=" * 60)
     print("Skia Graphite Renderer - Build")
-    print("=" * 50)
+    print("=" * 60)
     print()
     
     # Detect tools
@@ -156,35 +164,43 @@ def build_project(args):
     
     # Determine paths
     vulkan_sdk = args.vulkan_sdk or os.environ.get("VULKAN_SDK")
-    sdl3_dir = args.sdl3_path or (install_dir / "lib" / "cmake" / "SDL3")
-    if not sdl3_dir.exists():
-        sdl3_dir = deps_dir / "SDL3"
     
+    # SDL3 path - build-type-specific
+    sdl3_dir = args.sdl3_path
+    if not sdl3_dir:
+        # Check build-type-specific install first
+        sdl3_cmake = install_dir / "lib" / "cmake" / "SDL3"
+        if sdl3_cmake.exists():
+            sdl3_dir = sdl3_cmake
+        else:
+            # Fallback to deps/SDL3
+            sdl3_dir = deps_dir / "SDL3"
+    
+    # Skia path - build-type-specific
     skia_dir = args.skia_path or deps_dir / "skia"
-    vkb_dir = args.vkbootstrap_path or install_dir
-    if not vkb_dir.exists():
-        vkb_dir = deps_dir / "vk-bootstrap"
     
-    # Note: VMA is built into Skia, no separate path needed
+    # vk-bootstrap path - build-type-specific
+    vkb_dir = args.vkbootstrap_path or install_dir
     
     print("Configuration:")
-    print(f"  Build Type: {args.build_type}")
-    print(f"  Generator: Ninja (LLVM/Clang)")
+    print(f"  Build Type: {build_type}")
+    print(f"  Build Dir:  {build_dir}")
+    print(f"  Generator:  Ninja (LLVM/Clang)")
     if sccache:
-        print(f"  Cache: sccache")
+        print(f"  Cache:      sccache")
     print()
     
     print("Dependencies:")
-    print(f"  Vulkan SDK: {vulkan_sdk or 'Not set'}")
-    print(f"  SDL3: {sdl3_dir}")
-    print(f"  Skia: {skia_dir}")
+    print(f"  Vulkan SDK:   {vulkan_sdk or 'Not set'}")
+    print(f"  SDL3:         {sdl3_dir}")
+    print(f"  Skia:         {skia_dir} (out/{build_type})")
     print(f"  vk-bootstrap: {vkb_dir}")
-    print("  VMA: (built into Skia)")
+    print("  VMA:          (built into Skia)")
     print()
     
     # Clean if requested
     if args.clean and build_dir.exists():
-        print("Cleaning build directory...")
+        print(f"Cleaning build directory: {build_dir}")
         shutil.rmtree(build_dir)
     
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -196,7 +212,7 @@ def build_project(args):
     cmd = [
         "cmake", "-S", str(script_dir), "-B", str(build_dir),
         "-G", "Ninja",
-        f"-DCMAKE_BUILD_TYPE={args.build_type}",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
         f"-DCMAKE_C_COMPILER={clang}",
         f"-DCMAKE_CXX_COMPILER={clang_pp}",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
@@ -214,7 +230,7 @@ def build_project(args):
     cmd.append(f"-DSDL3_DIR={sdl3_dir}")
     cmd.append(f"-DSKIA_DIR={skia_dir}")
     cmd.append(f"-DVKBOOTSTRAP_DIR={vkb_dir}")
-    # VMA is built into Skia, no separate VMA_DIR needed
+    cmd.append(f"-DCMAKE_INSTALL_PREFIX={install_dir}")
     
     if args.cmake_args:
         cmd.extend(args.cmake_args.split())
@@ -225,32 +241,35 @@ def build_project(args):
         print(f"\nERROR: CMake configuration failed: {e}")
         print("\nTroubleshooting:")
         print("  1. Set VULKAN_SDK environment variable")
-        print("  2. Run sync.py and build_deps.py first")
+        print(f"  2. Run: python build_deps.py --build-type {build_type}")
+        print(f"  3. Run: python sync.py")
         return 1
     
     # Build
     print()
-    print(f"Building {args.build_type}...")
+    print(f"Building {build_type}...")
     print()
     
     try:
-        run_cmd(["cmake", "--build", str(build_dir), "--config", args.build_type])
+        run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
     except Exception as e:
         print(f"\nERROR: Build failed: {e}")
         return 1
     
     # Success
     print()
-    print("=" * 50)
+    print("=" * 60)
     print("Build Complete!")
-    print("=" * 50)
+    print("=" * 60)
     print()
     
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
     exe_path = build_dir / exe_name
     
     if exe_path.exists():
+        size_mb = exe_path.stat().st_size / (1024 * 1024)
         print(f"Executable: {exe_path}")
+        print(f"Size: {size_mb:.1f} MB")
         print(f"\nRun: {exe_path}")
     else:
         print(f"Executable should be in: {build_dir}")
@@ -269,10 +288,9 @@ def main():
     
     # Custom paths
     parser.add_argument("--vulkan-sdk", help="Vulkan SDK path")
-    parser.add_argument("--sdl3-path", help="SDL3 path")
+    parser.add_argument("--sdl3-path", help="SDL3 CMake path (auto-detected if not set)")
     parser.add_argument("--skia-path", help="Skia path")
     parser.add_argument("--vkbootstrap-path", help="vk-bootstrap path")
-    # Note: VMA is built into Skia, use skia_use_vma=True in build_deps.py
     parser.add_argument("--cmake-args", help="Extra CMake arguments")
     
     args = parser.parse_args()
