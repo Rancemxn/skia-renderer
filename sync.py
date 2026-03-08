@@ -1,6 +1,7 @@
 """
 Skia Renderer - Dependency Sync Script
-Downloads SDL3, vk-bootstrap, VMA, Skia with aria2 + 7z
+Downloads SDL3, vk-bootstrap, Skia with aria2 + 7z
+Note: VMA is built into Skia (skia_use_vma=True), no separate download needed
 """
 
 import os
@@ -14,7 +15,6 @@ from pathlib import Path
 # Default versions
 SDL3_VERSION = "3.4.2"
 VKBOOTSTRAP_VERSION = "1.4.343"
-VMA_VERSION = "3.3.0"
 
 def find_tool(name: str, extra_paths: list = None) -> str:
     """Find a tool in PATH or specified paths"""
@@ -184,7 +184,7 @@ def sync_deps(args):
     # 1. SDL3
     if not args.skip_sdl:
         print("=" * 50)
-        print("[1/4] SDL3")
+        print("[1/3] SDL3")
         print("=" * 50)
         
         sdl_dir = deps_dir / "SDL3"
@@ -206,7 +206,7 @@ def sync_deps(args):
     # 2. vk-bootstrap
     if not args.skip_vkbootstrap:
         print("=" * 50)
-        print("[2/4] vk-bootstrap")
+        print("[2/3] vk-bootstrap")
         print("=" * 50)
         
         vkb_dir = deps_dir / "vk-bootstrap"
@@ -224,31 +224,14 @@ def sync_deps(args):
             print("  [OK] vk-bootstrap")
         print()
     
-    # 3. VulkanMemoryAllocator
-    if not args.skip_vma:
-        print("=" * 50)
-        print("[3/4] VulkanMemoryAllocator")
-        print("=" * 50)
-        
-        vma_dir = deps_dir / "VulkanMemoryAllocator"
-        
-        if vma_dir.exists() and not overwrite:
-            print("  VMA already exists, skipping")
-        else:
-            if vma_dir.exists():
-                shutil.rmtree(vma_dir)
-            
-            url = f"https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v{VMA_VERSION}.zip"
-            archive = download_with_aria2(url, downloads_dir, f"VMA-{VMA_VERSION}.zip",
-                                         proxy=args.proxy)
-            extract_with_7z(archive, vma_dir)
-            print("  [OK] VulkanMemoryAllocator")
-        print()
+    # Note: VMA is built into Skia, controlled by skia_use_vma=True in build_deps.py
+    # No separate download needed
+
     
-    # 4. Skia
+    # 3. Skia
     if not args.skip_skia:
         print("=" * 50)
-        print("[4/4] Skia")
+        print("[3/3] Skia")
         print("=" * 50)
         
         skia_dir = deps_dir / "skia"
@@ -299,7 +282,7 @@ def sync_deps(args):
     print("=" * 50)
     print()
     print("Dependencies:")
-    for name in ["SDL3", "vk-bootstrap", "VulkanMemoryAllocator", "skia", "depot_tools"]:
+    for name in ["SDL3", "vk-bootstrap", "skia", "depot_tools"]:
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
@@ -315,7 +298,6 @@ def main():
     parser.add_argument("--skip-skia", action="store_true", help="Skip Skia")
     parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
     parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
-    parser.add_argument("--skip-vma", action="store_true", help="Skip VulkanMemoryAllocator")
     parser.add_argument("--no-overwrite", action="store_true", help="Don't overwrite existing")
     
     # Download options
