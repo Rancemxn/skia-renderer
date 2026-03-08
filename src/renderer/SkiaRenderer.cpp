@@ -573,7 +573,6 @@ bool SkiaRenderer::createBlitResources() {
 }
 
 void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) {
-    VkDevice device = m_context->getDevice();
     uint32_t imageIndex = m_context->getCurrentImageIndex();
     VkImage dstImage = m_context->getSwapchain()->getImage(imageIndex);
     VkExtent2D extent = m_context->getSwapchainExtent();
