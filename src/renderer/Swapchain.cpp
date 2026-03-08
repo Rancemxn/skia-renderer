@@ -159,15 +159,10 @@ bool Swapchain::createSwapchain(int width, int height) {
     // Build usage flags for Skia Graphite
     VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                   VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+                                   VK_IMAGE_USAGE_SAMPLED_BIT;
     
-    // Add optional flags if supported
-    if (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) {
-        usageFlags |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-    }
-    if (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) {
-        usageFlags |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    }
     
     m_imageUsageFlags = usageFlags;
     std::cout << "Swapchain usage flags: 0x" << std::hex << usageFlags << std::dec << std::endl;
