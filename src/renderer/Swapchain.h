@@ -28,7 +28,7 @@ public:
     void shutdown();
     void recreate(int width, int height);
 
-    VkResult acquireNextImage(VkSemaphore semaphore, uint32_t* imageIndex);
+    VkResult acquireNextImage(VkSemaphore semaphore, VkFence fence, uint32_t* imageIndex);
     VkSwapchainKHR getSwapchain() const { return m_swapchain; }
     VkFormat getFormat() const { return m_format; }
     VkExtent2D getExtent() const { return m_extent; }

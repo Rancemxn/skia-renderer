@@ -84,9 +84,11 @@ private:
     std::vector<VkCommandBuffer> m_commandBuffers;
     
     // Synchronization
-    std::vector<VkSemaphore> m_imageAvailableSemaphores;
+    // Per-swapchain-image semaphores for render completion signaling
     std::vector<VkSemaphore> m_renderFinishedSemaphores;
+    // Per-frame-in-flight fences
     std::vector<VkFence> m_inFlightFences;
+    std::vector<uint32_t> m_imagesInFlight;
     
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
     uint32_t m_currentFrame = 0;
