@@ -321,6 +321,11 @@ void VulkanContext::endFrame(VkSemaphore renderFinishedSemaphore) {
         std::cerr << "Failed to present swapchain image" << std::endl;
     }
 
+    // Signal the in-flight fence to indicate this frame is complete
+    // vkQueuePresentKHR doesn't accept a fence, so we use a null submit
+    // with vkQueueSubmit2 (Vulkan 1.3 synchronization2) to signal the fence
+    vkQueueSubmit2(m_deviceInfo.graphicsQueue, 0, nullptr, m_inFlightFences[m_currentFrame]);
+
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     m_frameStarted = false;
 }
