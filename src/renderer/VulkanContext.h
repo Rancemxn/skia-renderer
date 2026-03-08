@@ -83,9 +83,10 @@ private:
     VkCommandPool m_commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_commandBuffers;
     
-    // Synchronization - per-swapchain-image semaphores to avoid reuse issues
-    std::vector<VkSemaphore> m_imageAvailableSemaphores;   // Per image
-    std::vector<VkSemaphore> m_renderFinishedSemaphores;   // Per image
+    // Synchronization
+    // Per-frame semaphores for acquire (safe because we wait on fence before reusing)
+    std::vector<VkSemaphore> m_imageAvailableSemaphores;   // MAX_FRAMES_IN_FLIGHT
+    std::vector<VkSemaphore> m_renderFinishedSemaphores;   // Per image (present waits on these)
     std::vector<VkFence> m_inFlightFences;                  // Per frame
     std::vector<uint32_t> m_imageToFrame;                   // Which frame is using each image
     

@@ -78,6 +78,8 @@ void VulkanContext::shutdown() {
     // Cleanup synchronization objects
     for (size_t i = 0; i < m_imageAvailableSemaphores.size(); i++) {
         vkDestroySemaphore(m_deviceInfo.device, m_imageAvailableSemaphores[i], nullptr);
+    }
+    for (size_t i = 0; i < m_renderFinishedSemaphores.size(); i++) {
         vkDestroySemaphore(m_deviceInfo.device, m_renderFinishedSemaphores[i], nullptr);
     }
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -337,8 +339,9 @@ bool VulkanContext::createRenderPass() {
 }
 
 bool VulkanContext::createSyncObjects() {
-    // Create per-frame fences
+    // Create per-frame fences and acquire semaphores
     m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+    m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -353,20 +356,23 @@ bool VulkanContext::createSyncObjects() {
             std::cerr << "Failed to create fences" << std::endl;
             return false;
         }
+        if (vkCreateSemaphore(m_deviceInfo.device, &semaphoreInfo, nullptr, 
+                              &m_imageAvailableSemaphores[i]) != VK_SUCCESS) {
+            std::cerr << "Failed to create acquire semaphores" << std::endl;
+            return false;
+        }
     }
 
-    // Create per-swapchain-image semaphores
+    // Create per-swapchain-image render finished semaphores
+    // These are needed per-image because present waits on them
     size_t imageCount = m_swapchain->getImageCount();
-    m_imageAvailableSemaphores.resize(imageCount);
     m_renderFinishedSemaphores.resize(imageCount);
     m_imageToFrame.resize(imageCount, UINT32_MAX);  // No frame using this image initially
 
     for (size_t i = 0; i < imageCount; i++) {
         if (vkCreateSemaphore(m_deviceInfo.device, &semaphoreInfo, nullptr, 
-                              &m_imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(m_deviceInfo.device, &semaphoreInfo, nullptr, 
                               &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create semaphores" << std::endl;
+            std::cerr << "Failed to create render finished semaphores" << std::endl;
             return false;
         }
     }
@@ -383,11 +389,15 @@ bool VulkanContext::beginFrame() {
     vkWaitForFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame], 
                     VK_TRUE, UINT64_MAX);
 
-    // Acquire next swapchain image - don't use a semaphore yet, we'll use fence
+    // Reset fence BEFORE acquireNextImage (fence must be unsignaled when passed)
+    vkResetFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame]);
+
+    // Acquire next swapchain image with per-frame semaphore
+    // This is safe because we waited on fence, meaning previous frame completed
     uint32_t imageIndex;
     VkResult result = m_swapchain->acquireNextImage(
+        m_imageAvailableSemaphores[m_currentFrame],
         VK_NULL_HANDLE,
-        m_inFlightFences[m_currentFrame],
         &imageIndex);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -400,22 +410,17 @@ bool VulkanContext::beginFrame() {
 
     m_currentImageIndex = imageIndex;
 
-    // Wait for acquire to complete
-    vkWaitForFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame], 
-                    VK_TRUE, UINT64_MAX);
-
-    // If this image was used by a previous frame, wait for that frame to complete
+    // If this image was used by a previous frame, wait for that frame's fence
     if (m_imageToFrame[m_currentImageIndex] != UINT32_MAX) {
         uint32_t prevFrame = m_imageToFrame[m_currentImageIndex];
-        vkWaitForFences(m_deviceInfo.device, 1, &m_inFlightFences[prevFrame], 
-                        VK_TRUE, UINT64_MAX);
+        if (prevFrame != m_currentFrame) {
+            vkWaitForFences(m_deviceInfo.device, 1, &m_inFlightFences[prevFrame], 
+                            VK_TRUE, UINT64_MAX);
+        }
     }
 
     // Mark this image as being used by current frame
     m_imageToFrame[m_currentImageIndex] = m_currentFrame;
-
-    // Reset fence for this frame
-    vkResetFences(m_deviceInfo.device, 1, &m_inFlightFences[m_currentFrame]);
 
     // Reset and begin command buffer
     VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
@@ -492,12 +497,20 @@ void VulkanContext::endFrame() {
         return;
     }
 
-    // Submit command buffer with image-indexed semaphore for signaling
+    // Submit command buffer
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 0;  // We used fence for acquire sync
+
+    // Wait on per-frame acquire semaphore (safe because we waited on fence)
+    VkSemaphore waitSemaphores[] = {m_imageAvailableSemaphores[m_currentFrame]};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
+    
+    // Signal per-image render finished semaphore (present waits on this)
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentImageIndex];
 
@@ -508,7 +521,7 @@ void VulkanContext::endFrame() {
         return;
     }
 
-    // Present with image-indexed semaphore
+    // Present with per-image semaphore
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
