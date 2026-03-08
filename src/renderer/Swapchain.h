@@ -33,6 +33,7 @@ public:
     VkFormat getFormat() const { return m_format; }
     VkExtent2D getExtent() const { return m_extent; }
     VkFramebuffer getFramebuffer(size_t index) const;
+    VkImage getImage(size_t index) const;
     size_t getImageCount() const { return m_imageViews.size(); }
 
 private:

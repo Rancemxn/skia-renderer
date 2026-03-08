@@ -58,12 +58,16 @@ public:
     std::string getDeviceName() const { return m_deviceName; }
     uint32_t getCurrentImageIndex() const { return m_currentImageIndex; }
     Swapchain* getSwapchain() const { return m_swapchain.get(); }
+    
+    // Get current command buffer for external rendering
+    VkCommandBuffer getCurrentCommandBuffer() const;
 
 private:
     bool createInstance(SDL_Window* window);
     bool createDevice();
     bool createRenderPass();
     bool createSyncObjects();
+    bool createCommandPool();
 
     VkInstance m_instance = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
@@ -74,6 +78,10 @@ private:
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
     
     std::unique_ptr<Swapchain> m_swapchain;
+    
+    // Command buffers
+    VkCommandPool m_commandPool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> m_commandBuffers;
     
     // Synchronization
     std::vector<VkSemaphore> m_imageAvailableSemaphores;

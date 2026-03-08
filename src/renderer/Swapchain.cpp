@@ -240,4 +240,11 @@ VkFramebuffer Swapchain::getFramebuffer(size_t index) const {
     return VK_NULL_HANDLE;
 }
 
+VkImage Swapchain::getImage(size_t index) const {
+    if (index < m_images.size()) {
+        return m_images[index];
+    }
+    return VK_NULL_HANDLE;
+}
+
 } // namespace skia_renderer
