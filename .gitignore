@@ -1,8 +1,10 @@
-# Build directories
+# Build outputs - dependencies
+deps/*/out/
+deps/.sccache/
+deps/skia/.sccache/
+
+# Build outputs - main project
 build/
-cmake-build-*/
-build_deps/
-out/
 
 # IDE
 .idea/
@@ -17,6 +19,7 @@ out/
 *.a
 *.lib
 *.so
+*.so.*
 *.dylib
 *.dll
 *.exe
@@ -27,8 +30,8 @@ CMakeFiles/
 cmake_install.cmake
 compile_commands.json
 
-# Dependencies
-deps/
+# Downloads (sync.py)
+downloads/
 
 # Logs
 *.log

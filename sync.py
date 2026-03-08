@@ -281,13 +281,23 @@ def sync_deps(args):
     print("Dependency Sync Complete!")
     print("=" * 50)
     print()
-    print("Dependencies:")
+    print("Dependencies downloaded:")
     for name in ["SDL3", "vk-bootstrap", "skia", "depot_tools"]:
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
-    print("Next: python build.py --build-type Release")
-    print("       python build.py --build-type Debug")
+    print("Directory structure:")
+    print("  deps/SDL3/              - SDL3 source")
+    print("  deps/vk-bootstrap/      - vk-bootstrap source")
+    print("  deps/skia/              - Skia source")
+    print()
+    print("Build outputs will be in:")
+    print("  deps/*/out/{Debug,Release}/")
+    print("  build/{Debug,Release}/")
+    print()
+    print("Next:")
+    print("  python build.py --build-type Release")
+    print("  python build.py --build-type Debug")
     print()
     
     return 0
