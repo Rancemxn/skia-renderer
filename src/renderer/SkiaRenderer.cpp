@@ -1,5 +1,6 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
+#include "Swapchain.h"
 
 // Skia core headers
 #include "include/core/SkSurface.h"
