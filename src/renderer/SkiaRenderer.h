@@ -36,7 +36,7 @@ private:
     void destroyOffscreenRenderTarget();
     void blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore);
     bool createBlitResources();            // Create command pool/buffer for blit
-    bool checkDirectRenderingSupported();  // Check if GPU supports required flags
+    bool checkDirectRenderingSupported() const;  // Check if GPU supports required flags
 
     VulkanContext* m_context = nullptr;
 
