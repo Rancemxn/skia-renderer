@@ -66,11 +66,6 @@ void VulkanContext::shutdown() {
             vkDestroySemaphore(m_deviceInfo.device, m_imageAvailableSemaphores[i], nullptr);
         }
     }
-    for (size_t i = 0; i < m_renderFinishedSemaphores.size(); i++) {
-        if (m_renderFinishedSemaphores[i]) {
-            vkDestroySemaphore(m_deviceInfo.device, m_renderFinishedSemaphores[i], nullptr);
-        }
-    }
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (m_inFlightFences[i]) {
             vkDestroyFence(m_deviceInfo.device, m_inFlightFences[i], nullptr);
@@ -264,18 +259,6 @@ bool VulkanContext::createSyncObjects() {
         }
     }
 
-    // Per-swapchain-image render finished semaphores
-    size_t imageCount = m_swapchain->getImageCount();
-    m_renderFinishedSemaphores.resize(imageCount);
-
-    for (size_t i = 0; i < imageCount; i++) {
-        if (vkCreateSemaphore(m_deviceInfo.device, &semaphoreInfo, nullptr, 
-                              &m_renderFinishedSemaphores[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create render finished semaphores" << std::endl;
-            return false;
-        }
-    }
-
     return true;
 }
 
@@ -314,17 +297,17 @@ bool VulkanContext::beginFrame() {
     return true;
 }
 
-void VulkanContext::endFrame() {
+void VulkanContext::endFrame(VkSemaphore renderFinishedSemaphore) {
     if (!m_frameStarted) {
         return;
     }
 
     // Present with synchronization
-    // Wait on the render finished semaphore for this image
+    // Wait on the render finished semaphore provided by Skia
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[m_currentImageIndex];
+    presentInfo.waitSemaphoreCount = (renderFinishedSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
     presentInfo.swapchainCount = 1;
     VkSwapchainKHR swapchain = m_swapchain->getSwapchain();
     presentInfo.pSwapchains = &swapchain;
@@ -363,10 +346,6 @@ VkFormat VulkanContext::getSwapchainFormat() const {
 
 VkSemaphore VulkanContext::getImageAvailableSemaphore() const {
     return m_imageAvailableSemaphores[m_currentFrame];
-}
-
-VkSemaphore VulkanContext::getRenderFinishedSemaphore() const {
-    return m_renderFinishedSemaphores[m_currentImageIndex];
 }
 
 VkFence VulkanContext::getInFlightFence() const {

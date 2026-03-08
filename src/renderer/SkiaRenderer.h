@@ -26,8 +26,12 @@ public:
     // Render to current swapchain image
     void render();
 
+    // Get the render finished semaphore for the current image (for presentation)
+    VkSemaphore getRenderFinishedSemaphore() const;
+
 private:
     bool createSkiaContext();
+    bool createSwapchainSurfaces();
 
     VulkanContext* m_context = nullptr;
 
