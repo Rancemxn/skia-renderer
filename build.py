@@ -275,7 +275,7 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     if sccache:
         env["SCCACHE_DIR"] = str(skia_dir / ".sccache")
     
-    # GN args
+    # GN args - minimal build for library only
     is_windows = platform.system() == "Windows"
     crt_flag = "/MTd" if build_type == "Debug" else "/MT"
     
@@ -285,6 +285,7 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         f'is_official_build={"true" if build_type == "Release" else "false"}',
         f'is_debug={"true" if build_type == "Debug" else "false"}',
         'is_component_build=false',
+        # Core features
         'skia_enable_ganesh=true',
         'skia_enable_graphite=true',
         'skia_use_vulkan=true',
@@ -297,7 +298,13 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         'skia_use_zlib=true',
         'skia_use_wuffs=true',
         'skia_use_vma=true',
-        # Use bundled libraries
+        # Disable unnecessary components
+        'skia_enable_tools=false',
+        'skia_enable_android_utils=false',
+        'skia_enable_fontmgr_android=false',
+        'skia_enable_fontmgr_custom_embedded=false',
+        'skia_enable_fontmgr_empty=false',
+        # Use bundled libraries (no system deps)
         'skia_use_system_expat=false',
         'skia_use_system_harfbuzz=false',
         'skia_use_system_icu=false',
@@ -325,8 +332,9 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     print(f"  Configuring...")
     run_cmd([gn, "gen", out_dir, f"--args={gn_args_str}"], cwd=str(skia_dir), env=env)
     
-    print("  Building...")
-    run_cmd([ninja, "-C", out_dir], cwd=str(skia_dir), env=env)
+    print("  Building skia library only...")
+    # Only build the skia target, not benchmarks/tests/tools
+    run_cmd([ninja, "-C", out_dir, "skia"], cwd=str(skia_dir), env=env)
     
     print(f"  Output: {skia_dir / out_dir}")
     return True
