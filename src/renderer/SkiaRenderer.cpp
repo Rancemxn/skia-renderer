@@ -22,6 +22,7 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteContext.h"
 
 // Skia Vulkan Memory Allocator (internal)
+#include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
 
 #include <iostream>
