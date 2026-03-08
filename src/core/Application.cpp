@@ -1,6 +1,7 @@
 #include "Application.h"
 #include "renderer/VulkanContext.h"
 #include "renderer/SkiaRenderer.h"
+#include "renderer/Swapchain.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
