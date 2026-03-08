@@ -1,7 +1,10 @@
 """
 Skia Renderer - Dependency Sync Script
-Downloads SDL3, vk-bootstrap, Skia with aria2 + 7z
-Note: VMA is built into Skia (skia_use_vma=True), no separate download needed
+Downloads SDL3, vk-bootstrap, Skia
+
+Supported tools:
+  - aria2c (preferred) or curl for downloads
+  - 7z (preferred), unzip, or tar for extraction
 """
 
 import os
@@ -10,6 +13,8 @@ import shutil
 import subprocess
 import argparse
 import platform
+import tarfile
+import zipfile
 from pathlib import Path
 
 # Default versions
@@ -53,12 +58,16 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
         raise subprocess.CalledProcessError(result.returncode, cmd)
     return result
 
+# ========================================
+# Download Functions
+# ========================================
+
 def download_with_aria2(url: str, output_dir: Path, filename: str, 
                         proxy: str = None) -> Path:
-    """Download a file using aria2c"""
+    """Download using aria2c (fast, multi-threaded)"""
     aria2 = find_tool("aria2c")
     if not aria2:
-        raise RuntimeError("aria2c not found. Install: winget install aria2")
+        return None
     
     output_path = output_dir / filename
     
@@ -76,21 +85,96 @@ def download_with_aria2(url: str, output_dir: Path, filename: str,
     if proxy:
         cmd.extend(["--all-proxy", proxy])
     
-    print(f"  Downloading: {filename}")
+    print(f"  Downloading (aria2): {filename}")
     run_cmd(cmd)
     
-    if not output_path.exists():
-        raise RuntimeError(f"Failed to download {filename}")
+    return output_path if output_path.exists() else None
+
+def download_with_curl(url: str, output_dir: Path, filename: str,
+                       proxy: str = None) -> Path:
+    """Download using curl (fallback)"""
+    curl = find_tool("curl")
+    if not curl:
+        return None
     
-    return output_path
+    output_path = output_dir / filename
+    
+    cmd = [
+        curl, "-L", "-o", str(output_path),
+        "--connect-timeout", "30",
+        "--retry", "3",
+    ]
+    
+    if proxy:
+        cmd.extend(["--proxy", proxy])
+    
+    cmd.append(url)
+    
+    print(f"  Downloading (curl): {filename}")
+    run_cmd(cmd)
+    
+    return output_path if output_path.exists() else None
+
+def download_with_wget(url: str, output_dir: Path, filename: str,
+                       proxy: str = None) -> Path:
+    """Download using wget (fallback)"""
+    wget = find_tool("wget")
+    if not wget:
+        return None
+    
+    output_path = output_dir / filename
+    
+    cmd = [wget, "-O", str(output_path)]
+    
+    if proxy:
+        cmd.extend(["-e", f"http_proxy={proxy}", "-e", f"https_proxy={proxy}"])
+    
+    cmd.append(url)
+    
+    print(f"  Downloading (wget): {filename}")
+    run_cmd(cmd)
+    
+    return output_path if output_path.exists() else None
+
+def download_file(url: str, output_dir: Path, filename: str,
+                  proxy: str = None) -> Path:
+    """Download a file using available tool"""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / filename
+    
+    # Skip if already downloaded
+    if output_path.exists():
+        print(f"  Already exists: {filename}")
+        return output_path
+    
+    # Try tools in order of preference
+    result = None
+    
+    result = download_with_aria2(url, output_dir, filename, proxy)
+    if result:
+        return result
+    
+    result = download_with_curl(url, output_dir, filename, proxy)
+    if result:
+        return result
+    
+    result = download_with_wget(url, output_dir, filename, proxy)
+    if result:
+        return result
+    
+    raise RuntimeError("No download tool found. Install aria2, curl, or wget.")
+
+# ========================================
+# Extraction Functions
+# ========================================
 
 def extract_with_7z(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
-    """Extract an archive using 7z"""
+    """Extract using 7z"""
     sevenzip = find_tool("7z")
     if not sevenzip:
-        raise RuntimeError("7z not found. Install: winget install 7zip.7zip")
+        return None
     
-    print(f"  Extracting: {archive.name}")
+    print(f"  Extracting (7z): {archive.name}")
     
     if strip_components == 0:
         cmd = [sevenzip, "x", "-y", f"-o{output_dir}", str(archive)]
@@ -120,11 +204,164 @@ def extract_with_7z(archive: Path, output_dir: Path, strip_components: int = 1) 
         shutil.rmtree(output_dir)
     shutil.move(str(src_dir), str(output_dir))
     
-    # Cleanup temp
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
     
     return output_dir
+
+def extract_with_unzip(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+    """Extract zip using unzip"""
+    unzip = find_tool("unzip")
+    if not unzip or not str(archive).endswith('.zip'):
+        return None
+    
+    print(f"  Extracting (unzip): {archive.name}")
+    
+    temp_dir = output_dir.parent / f"{output_dir.name}_temp"
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    temp_dir.mkdir(parents=True)
+    
+    cmd = [unzip, "-q", "-o", str(archive), "-d", str(temp_dir)]
+    run_cmd(cmd)
+    
+    # Navigate through strip_components
+    src_dir = temp_dir
+    for _ in range(strip_components):
+        subdirs = [d for d in src_dir.iterdir() if d.is_dir()]
+        if len(subdirs) == 1:
+            src_dir = subdirs[0]
+        else:
+            break
+    
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    shutil.move(str(src_dir), str(output_dir))
+    
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    
+    return output_dir
+
+def extract_with_tar(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+    """Extract tar archives using tar command"""
+    tar = find_tool("tar")
+    if not tar:
+        return None
+    
+    name = str(archive).lower()
+    if not (name.endswith('.tar.gz') or name.endswith('.tgz') or 
+            name.endswith('.tar.bz2') or name.endswith('.tar.xz') or 
+            name.endswith('.tar')):
+        return None
+    
+    print(f"  Extracting (tar): {archive.name}")
+    
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    
+    # tar can handle strip-components natively
+    cmd = [tar, "-xf", str(archive), "-C", str(output_dir.parent)]
+    if strip_components > 0:
+        cmd.extend([f"--strip-components={strip_components}"])
+    
+    # Rename extracted dir to target name
+    temp_name = output_dir.parent / "extract_temp"
+    if temp_name.exists():
+        shutil.rmtree(temp_name)
+    
+    run_cmd(cmd)
+    
+    # Find extracted directory
+    for item in output_dir.parent.iterdir():
+        if item.is_dir() and item != temp_name:
+            if item.name.startswith("extract_temp"):
+                continue
+            shutil.move(str(item), str(output_dir))
+            break
+    
+    return output_dir
+
+def extract_with_python(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+    """Extract using Python's built-in modules (fallback)"""
+    print(f"  Extracting (Python): {archive.name}")
+    
+    temp_dir = output_dir.parent / f"{output_dir.name}_temp"
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    temp_dir.mkdir(parents=True)
+    
+    name = str(archive).lower()
+    
+    try:
+        if name.endswith('.zip'):
+            with zipfile.ZipFile(archive, 'r') as zf:
+                zf.extractall(temp_dir)
+        elif name.endswith('.tar.gz') or name.endswith('.tgz'):
+            with tarfile.open(archive, 'r:gz') as tf:
+                tf.extractall(temp_dir)
+        elif name.endswith('.tar.bz2'):
+            with tarfile.open(archive, 'r:bz2') as tf:
+                tf.extractall(temp_dir)
+        elif name.endswith('.tar.xz'):
+            with tarfile.open(archive, 'r:xz') as tf:
+                tf.extractall(temp_dir)
+        elif name.endswith('.tar'):
+            with tarfile.open(archive, 'r') as tf:
+                tf.extractall(temp_dir)
+        else:
+            return None
+    except Exception as e:
+        print(f"  Python extraction failed: {e}")
+        return None
+    
+    # Navigate through strip_components
+    src_dir = temp_dir
+    for _ in range(strip_components):
+        subdirs = [d for d in src_dir.iterdir() if d.is_dir()]
+        if len(subdirs) == 1:
+            src_dir = subdirs[0]
+        else:
+            break
+    
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    shutil.move(str(src_dir), str(output_dir))
+    
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    
+    return output_dir
+
+def extract_archive(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+    """Extract an archive using available tool"""
+    result = None
+    
+    # Try 7z first (handles all formats)
+    result = extract_with_7z(archive, output_dir, strip_components)
+    if result:
+        return result
+    
+    # Try native tar
+    result = extract_with_tar(archive, output_dir, strip_components)
+    if result:
+        return result
+    
+    # Try unzip for zip files
+    result = extract_with_unzip(archive, output_dir, strip_components)
+    if result:
+        return result
+    
+    # Try Python's built-in (last resort)
+    result = extract_with_python(archive, output_dir, strip_components)
+    if result:
+        return result
+    
+    raise RuntimeError(f"No extraction tool found for {archive.name}")
+
+# ========================================
+# Git Clone
+# ========================================
 
 def git_clone(url: str, target_dir: Path, depth: int = 1, branch: str = None) -> Path:
     """Clone a git repository"""
@@ -148,6 +385,10 @@ def git_clone(url: str, target_dir: Path, depth: int = 1, branch: str = None) ->
     
     return target_dir
 
+# ========================================
+# Main
+# ========================================
+
 def sync_deps(args):
     """Main sync function"""
     script_dir = Path(__file__).parent.resolve()
@@ -164,19 +405,44 @@ def sync_deps(args):
     
     # Check tools
     print("[Checking Tools]")
+    
     tools = {
-        "aria2c": find_tool("aria2c"),
-        "7z": find_tool("7z"),
         "git": find_tool("git"),
-        "python": sys.executable,
     }
     
-    for name, path in tools.items():
-        if path:
-            print(f"  [OK] {name}: {path}")
-        else:
-            print(f"  [ERROR] {name} not found")
-            return 1
+    # Download tools
+    download_tools = []
+    if find_tool("aria2c"):
+        download_tools.append("aria2c")
+    if find_tool("curl"):
+        download_tools.append("curl")
+    if find_tool("wget"):
+        download_tools.append("wget")
+    
+    # Extraction tools  
+    extract_tools = []
+    if find_tool("7z"):
+        extract_tools.append("7z")
+    if find_tool("tar"):
+        extract_tools.append("tar")
+    if find_tool("unzip"):
+        extract_tools.append("unzip")
+    # Python is always available
+    extract_tools.append("Python")
+    
+    print(f"  git: {tools['git'] or 'NOT FOUND'}")
+    print(f"  Download: {', '.join(download_tools) or 'NONE'}")
+    print(f"  Extract: {', '.join(extract_tools)}")
+    print(f"  Python: {sys.executable}")
+    
+    if not tools["git"]:
+        print("\n  ERROR: git is required")
+        return 1
+    
+    if not download_tools:
+        print("\n  ERROR: No download tool found (aria2c, curl, or wget)")
+        return 1
+    
     print()
     
     overwrite = not args.no_overwrite
@@ -197,9 +463,9 @@ def sync_deps(args):
             
             url = f"https://github.com/libsdl-org/SDL/archive/refs/tags/release-{SDL3_VERSION}.zip"
             
-            archive = download_with_aria2(url, downloads_dir, f"SDL3-{SDL3_VERSION}.zip",
-                                         proxy=args.proxy)
-            extract_with_7z(archive, sdl_dir)
+            archive = download_file(url, downloads_dir, f"SDL3-{SDL3_VERSION}.zip",
+                                   proxy=args.proxy)
+            extract_archive(archive, sdl_dir)
             print("  [OK] SDL3")
         print()
     
@@ -218,15 +484,11 @@ def sync_deps(args):
                 shutil.rmtree(vkb_dir)
             
             url = f"https://github.com/charles-lunarg/vk-bootstrap/archive/refs/tags/v{VKBOOTSTRAP_VERSION}.zip"
-            archive = download_with_aria2(url, downloads_dir, f"vk-bootstrap-{VKBOOTSTRAP_VERSION}.zip",
-                                         proxy=args.proxy)
-            extract_with_7z(archive, vkb_dir)
+            archive = download_file(url, downloads_dir, f"vk-bootstrap-{VKBOOTSTRAP_VERSION}.zip",
+                                   proxy=args.proxy)
+            extract_archive(archive, vkb_dir)
             print("  [OK] vk-bootstrap")
         print()
-    
-    # Note: VMA is built into Skia, controlled by skia_use_vma=True in build_deps.py
-    # No separate download needed
-
     
     # 3. Skia
     if not args.skip_skia:
