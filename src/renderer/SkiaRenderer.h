@@ -23,7 +23,9 @@ public:
     void shutdown();
     void resize(int width, int height);
 
-    void render(VkFramebuffer framebuffer);
+    // Render directly to a swapchain image
+    void renderToSwapchainImage(VkImage swapchainImage, VkFormat format, 
+                                 VkImageLayout currentLayout, uint32_t imageIndex);
 
 private:
     bool createSkiaContext();

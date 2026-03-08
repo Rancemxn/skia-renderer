@@ -20,6 +20,7 @@
 #include "include/gpu/graphite/Surface.h"
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteContext.h"
+#include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 
 // Skia Vulkan Memory Allocator (internal)
 #include "src/gpu/GpuTypesPriv.h"
@@ -57,10 +58,6 @@ bool SkiaRenderer::initialize(VulkanContext* context, int width, int height) {
         return false;
     }
 
-    if (!createSkiaSurface()) {
-        return false;
-    }
-
     m_initialized = true;
     std::cout << "Skia Graphite renderer initialized (" << width << "x" << height << ")" << std::endl;
     return true;
@@ -83,24 +80,14 @@ void SkiaRenderer::shutdown() {
 void SkiaRenderer::resize(int width, int height) {
     m_width = width;
     m_height = height;
-    
-    // Recreate surface with new dimensions
-    m_impl->surface.reset();
-    createSkiaSurface();
 }
 
 bool SkiaRenderer::createSkiaContext() {
     // Get proc address function
-    // Note: vkEnumerateInstanceVersion can be called before instance creation,
-    // so we need to handle the case where both instance and device are null.
-    // Per Vulkan spec, vkGetInstanceProcAddr can accept VK_NULL_HANDLE for
-    // instance-level functions that don't require an instance.
     auto getProc = [](const char* name, VkInstance instance, VkDevice device) {
         if (device != VK_NULL_HANDLE) {
             return vkGetDeviceProcAddr(device, name);
         }
-        // For instance-level functions (including vkEnumerateInstanceVersion),
-        // we can pass VK_NULL_HANDLE to vkGetInstanceProcAddr
         return vkGetInstanceProcAddr(instance, name);
     };
 
@@ -117,7 +104,6 @@ bool SkiaRenderer::createSkiaContext() {
     );
 
     // Initialize Vulkan extensions
-    // Extensions we're using
     const char* instanceExtensions[] = {
         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
 #ifdef ENABLE_VULKAN_VALIDATION
@@ -159,7 +145,6 @@ bool SkiaRenderer::createSkiaContext() {
     backendContext.fGetProc = getProc;
 
     // Create memory allocator using Skia's internal VMA wrapper
-    // This must be done after backendContext is fully configured
     std::cout << "  Creating VMA memory allocator via Skia..." << std::endl;
     m_impl->vulkanAllocator = skgpu::VulkanMemoryAllocators::Make(
         backendContext,
@@ -197,56 +182,73 @@ bool SkiaRenderer::createSkiaContext() {
     return true;
 }
 
-bool SkiaRenderer::createSkiaSurface() {
-    if (!m_impl->recorder) {
-        return false;
+void SkiaRenderer::renderToSwapchainImage(VkImage swapchainImage, VkFormat format, 
+                                           VkImageLayout currentLayout, uint32_t imageIndex) {
+    if (!m_impl->recorder || !m_impl->graphiteContext) {
+        return;
     }
 
     // Determine color type from swapchain format
-    VkFormat format = m_context->getSwapchainFormat();
     SkColorType colorType = kRGBA_8888_SkColorType;
     if (format == VK_FORMAT_B8G8R8A8_SRGB || format == VK_FORMAT_B8G8R8A8_UNORM) {
         colorType = kBGRA_8888_SkColorType;
     }
 
-    // Create image info for the surface
-    SkImageInfo imageInfo = SkImageInfo::Make(
-        m_width, m_height,
-        colorType,
-        kPremul_SkAlphaType,
-        SkColorSpace::MakeSRGB()
+    // Create VulkanTextureInfo for the swapchain image
+    skgpu::graphite::VulkanTextureInfo vulkanTextureInfo(
+        VK_SAMPLE_COUNT_1_BIT,                    // sampleCount
+        skgpu::Mipmapped::kNo,                    // mipmapped
+        0,                                        // flags
+        format,                                   // format
+        VK_IMAGE_TILING_OPTIMAL,                  // imageTiling
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,  // imageUsageFlags
+        VK_SHARING_MODE_EXCLUSIVE,                // sharingMode
+        VK_IMAGE_ASPECT_COLOR_BIT,                // aspectMask
+        skgpu::VulkanYcbcrConversionInfo()        // ycbcrConversionInfo
     );
 
-    // Create render target surface using Graphite
+    // Create TextureInfo from VulkanTextureInfo
+    skgpu::graphite::TextureInfo textureInfo = 
+        skgpu::graphite::TextureInfos::MakeVulkan(vulkanTextureInfo);
+
+    // Create an empty VulkanAlloc (swapchain images are borrowed, not owned by Skia)
+    skgpu::VulkanAlloc vulkanAlloc{};
+    vulkanAlloc.fMemory = VK_NULL_HANDLE;  // Borrowed image
+    vulkanAlloc.fOffset = 0;
+    vulkanAlloc.fSize = 0;
+
+    // Create BackendTexture from the swapchain image
+    SkISize dimensions = SkISize::Make(m_width, m_height);
+    skgpu::graphite::BackendTexture backendTexture = 
+        skgpu::graphite::BackendTextures::MakeVulkan(
+            dimensions,
+            vulkanTextureInfo,
+            currentLayout,
+            m_context->getGraphicsFamilyIndex(),
+            swapchainImage,
+            vulkanAlloc
+        );
+
+    if (!backendTexture.isValid()) {
+        std::cerr << "Failed to create BackendTexture for swapchain image" << std::endl;
+        return;
+    }
+
+    // Wrap the swapchain image as an SkSurface
     SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-    m_impl->surface = SkSurfaces::RenderTarget(
+    m_impl->surface = SkSurfaces::WrapBackendTexture(
         m_impl->recorder.get(),
-        imageInfo,
-        skgpu::Mipmapped::kNo,
+        backendTexture,
+        SkColorSpace::MakeSRGB(),
         &props
     );
 
     if (!m_impl->surface) {
-        std::cerr << "Failed to create Graphite render target surface" << std::endl;
-        return false;
-    }
-
-    return true;
-}
-
-void SkiaRenderer::render(VkFramebuffer framebuffer) {
-    if (!m_impl->recorder || !m_impl->graphiteContext) {
+        std::cerr << "Failed to wrap swapchain image as SkSurface" << std::endl;
         return;
     }
 
-    // Get or create surface
-    if (!m_impl->surface) {
-        if (!createSkiaSurface()) {
-            return;
-        }
-    }
-
-    // Draw content
+    // Draw content to the surface
     drawContent();
 
     // Snap recording
@@ -263,8 +265,9 @@ void SkiaRenderer::render(VkFramebuffer framebuffer) {
 
     // Submit to GPU
     m_impl->graphiteContext->submit();
-    
-    (void)framebuffer; // Will be used in full swapchain integration
+
+    // Reset surface for next frame
+    m_impl->surface.reset();
 }
 
 void SkiaRenderer::drawContent() {

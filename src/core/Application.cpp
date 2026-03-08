@@ -183,14 +183,18 @@ void Application::render() {
         return;
     }
 
-    // Get current framebuffer
-    VkFramebuffer framebuffer = m_impl->vulkanContext->getCurrentFramebuffer();
-    if (framebuffer == VK_NULL_HANDLE) {
-        return;
-    }
+    // Get current swapchain image
+    uint32_t imageIndex = m_impl->vulkanContext->getCurrentImageIndex();
+    VkImage swapchainImage = m_impl->vulkanContext->getSwapchain()->getImage(imageIndex);
+    VkFormat format = m_impl->vulkanContext->getSwapchainFormat();
 
-    // Render with Skia
-    m_impl->skiaRenderer->render(framebuffer);
+    // Render with Skia directly to the swapchain image
+    m_impl->skiaRenderer->renderToSwapchainImage(
+        swapchainImage,
+        format,
+        VK_IMAGE_LAYOUT_UNDEFINED,  // Image was just acquired
+        imageIndex
+    );
 
     // End frame and present
     m_impl->vulkanContext->endFrame();
