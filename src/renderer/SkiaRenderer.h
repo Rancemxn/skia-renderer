@@ -31,7 +31,12 @@ public:
 
 private:
     bool createSkiaContext();
-    bool createSwapchainSurfaces();
+    bool createSwapchainSurfaces();        // Direct-to-swapchain mode
+    bool createOffscreenRenderTarget();    // Fallback: offscreen + blit mode
+    void destroyOffscreenRenderTarget();
+    void blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore);
+    bool createBlitResources();            // Create command pool/buffer for blit
+    bool checkDirectRenderingSupported();  // Check if GPU supports required flags
 
     VulkanContext* m_context = nullptr;
 
@@ -41,6 +46,7 @@ private:
     int m_width = 0;
     int m_height = 0;
     bool m_initialized = false;
+    bool m_useOffscreenRendering = false;  // Fallback mode when direct rendering not supported
 };
 
 } // namespace skia_renderer
