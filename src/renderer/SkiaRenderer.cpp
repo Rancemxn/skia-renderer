@@ -14,6 +14,15 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkTypeface.h"
 
+// Skia platform-specific font manager headers
+#if defined(_WIN32)
+#include "include/ports/SkTypeface_win.h"
+#elif defined(__linux__)
+#include "include/ports/SkFontMgr_fontconfig.h"
+#elif defined(__APPLE__)
+#include "include/ports/SkFontMgr_mac_ct.h"
+#endif
+
 // Skia GPU headers
 #include "include/gpu/MutableTextureState.h"
 #include "include/gpu/vk/VulkanExtensions.h"
@@ -232,12 +241,20 @@ bool SkiaRenderer::createSkiaContext() {
 
     std::cout << "  Creating Skia Graphite context..." << std::endl;
 
-    // Initialize font manager first
+    // Initialize font manager (platform-specific)
     std::cout << "  Initializing font manager..." << std::endl;
-    m_impl->fontMgr = SkFontMgr::RefDefault();
+#if defined(_WIN32)
+    m_impl->fontMgr = SkFontMgr_New_DirectWrite();
+#elif defined(__linux__)
+    m_impl->fontMgr = SkFontMgr_New_FontConfig(nullptr, nullptr);
+#elif defined(__APPLE__)
+    m_impl->fontMgr = SkFontMgr_New_CoreText(nullptr);
+#else
+    m_impl->fontMgr = SkFontMgr::RefEmpty();
+#endif
     if (!m_impl->fontMgr) {
-        std::cerr << "  Failed to create font manager" << std::endl;
-        return false;
+        std::cerr << "  Warning: Failed to create platform font manager, using empty font manager" << std::endl;
+        m_impl->fontMgr = SkFontMgr::RefEmpty();
     }
 
     // Get a default typeface
