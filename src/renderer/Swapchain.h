@@ -21,7 +21,7 @@ public:
         VkPhysicalDevice physicalDevice,
         VkDevice device,
         VkSurfaceKHR surface,
-        VkRenderPass renderPass,
+        VkRenderPass renderPass,  // Can be VK_NULL_HANDLE for Skia Graphite
         int width,
         int height);
 
@@ -32,25 +32,26 @@ public:
     VkSwapchainKHR getSwapchain() const { return m_swapchain; }
     VkFormat getFormat() const { return m_format; }
     VkExtent2D getExtent() const { return m_extent; }
-    VkFramebuffer getFramebuffer(size_t index) const;
+    VkFramebuffer getFramebuffer(size_t index) const;  // May return VK_NULL_HANDLE if not created
     VkImage getImage(size_t index) const;
-    size_t getImageCount() const { return m_imageViews.size(); }
+    VkImageView getImageView(size_t index) const;
+    size_t getImageCount() const { return m_images.size(); }
 
 private:
     bool createSwapchain(int width, int height);
     bool createImageViews();
-    bool createFramebuffers();
+    bool createFramebuffers();  // Only creates if renderPass is valid
     void cleanup();
 
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
     VkDevice m_device = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
-    VkRenderPass m_renderPass = VK_NULL_HANDLE;
+    VkRenderPass m_renderPass = VK_NULL_HANDLE;  // Optional for Skia Graphite
     
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_imageViews;
-    std::vector<VkFramebuffer> m_framebuffers;
+    std::vector<VkFramebuffer> m_framebuffers;  // May be empty for Skia Graphite
     
     VkFormat m_format = VK_FORMAT_UNDEFINED;
     VkExtent2D m_extent = {0, 0};
