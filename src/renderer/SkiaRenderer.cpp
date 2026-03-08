@@ -11,6 +11,8 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkFontMgr.h"
+#include "include/core/SkTypeface.h"
 
 // Skia GPU headers
 #include "include/gpu/MutableTextureState.h"
@@ -71,6 +73,13 @@ struct SkiaRenderer::Impl {
 
     // Timing for animation
     std::chrono::high_resolution_clock::time_point startTime;
+
+    // Font management
+    sk_sp<SkFontMgr> fontMgr;
+    sk_sp<SkTypeface> defaultTypeface;
+    SkFont defaultFont;
+    SkFont smallFont;
+    bool fontsInitialized = false;
 
     // Debug
     uint64_t frameCount = 0;
@@ -222,6 +231,49 @@ bool SkiaRenderer::createSkiaContext() {
     };
 
     std::cout << "  Creating Skia Graphite context..." << std::endl;
+
+    // Initialize font manager first
+    std::cout << "  Initializing font manager..." << std::endl;
+    m_impl->fontMgr = SkFontMgr::RefDefault();
+    if (!m_impl->fontMgr) {
+        std::cerr << "  Failed to create font manager" << std::endl;
+        return false;
+    }
+
+    // Get a default typeface
+    m_impl->defaultTypeface = m_impl->fontMgr->matchFamilyStyle(nullptr, SkFontStyle::Normal());
+    if (!m_impl->defaultTypeface) {
+        std::cerr << "  Warning: Failed to match default typeface, trying legacy method" << std::endl;
+        // Try to get any available font
+        int familyCount = m_impl->fontMgr->countFamilies();
+        if (familyCount > 0) {
+            for (int i = 0; i < familyCount; ++i) {
+                SkString familyName;
+                m_impl->fontMgr->getFamilyName(i, &familyName);
+                std::cout << "    Found font family: " << familyName.c_str() << std::endl;
+            }
+            // Try to match the first available family
+            m_impl->defaultTypeface = m_impl->fontMgr->legacyMakeTypeface(nullptr, SkFontStyle::Normal());
+        }
+    }
+
+    if (m_impl->defaultTypeface) {
+        std::cout << "  Font typeface loaded successfully" << std::endl;
+        // Initialize fonts with the typeface
+        m_impl->defaultFont = SkFont(m_impl->defaultTypeface, 20.0f);
+        m_impl->defaultFont.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        m_impl->defaultFont.setSubpixel(true);
+        m_impl->defaultFont.setHinting(SkFontHinting::kSlight);
+
+        m_impl->smallFont = SkFont(m_impl->defaultTypeface, 14.0f);
+        m_impl->smallFont.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        m_impl->smallFont.setSubpixel(true);
+        m_impl->smallFont.setHinting(SkFontHinting::kSlight);
+
+        m_impl->fontsInitialized = true;
+    } else {
+        std::cerr << "  Warning: No font typeface available, text rendering may fail" << std::endl;
+    }
 
     vkGetPhysicalDeviceFeatures(
         m_context->getPhysicalDevice(),
@@ -843,23 +895,38 @@ void SkiaRenderer::render() {
         paint
     );
 
-    // Draw text
-    SkFont font;
-    font.setSize(20);
+    // Draw text (use pre-loaded fonts with valid typeface)
     paint.setColor(SK_ColorWHITE);
-    canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 35, font, paint);
 
-    // Draw FPS
-    std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
-    canvas->drawString(fpsStr.c_str(), 20, 60, font, paint);
+    // Draw title and FPS with default font (20px)
+    if (m_impl->fontsInitialized) {
+        canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 35, m_impl->defaultFont, paint);
 
-    font.setSize(14);
-    paint.setColor(SkColorSetARGB(180, 200, 200, 200));
+        // Draw FPS
+        std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
+        canvas->drawString(fpsStr.c_str(), 20, 60, m_impl->defaultFont, paint);
 
-    std::string modeStr = m_useOffscreenRendering ? "Mode: Offscreen + Blit" : "Mode: Direct Rendering";
-    canvas->drawString(modeStr.c_str(), 20, extent.height - 65, font, paint);
-    canvas->drawString("Renderer: Skia Graphite", 20, extent.height - 45, font, paint);
-    canvas->drawString("Press ESC to exit", 20, extent.height - 25, font, paint);
+        // Draw info with small font (14px)
+        paint.setColor(SkColorSetARGB(180, 200, 200, 200));
+
+        std::string modeStr = m_useOffscreenRendering ? "Mode: Offscreen + Blit" : "Mode: Direct Rendering";
+        canvas->drawString(modeStr.c_str(), 20, extent.height - 65, m_impl->smallFont, paint);
+        canvas->drawString("Renderer: Skia Graphite", 20, extent.height - 45, m_impl->smallFont, paint);
+        canvas->drawString("Press ESC to exit", 20, extent.height - 25, m_impl->smallFont, paint);
+    } else {
+        // Fallback: try to draw without pre-loaded font (may not work)
+        SkFont fallbackFont;
+        fallbackFont.setSize(20);
+        canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 35, fallbackFont, paint);
+        std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
+        canvas->drawString(fpsStr.c_str(), 20, 60, fallbackFont, paint);
+        fallbackFont.setSize(14);
+        paint.setColor(SkColorSetARGB(180, 200, 200, 200));
+        std::string modeStr = m_useOffscreenRendering ? "Mode: Offscreen + Blit" : "Mode: Direct Rendering";
+        canvas->drawString(modeStr.c_str(), 20, extent.height - 65, fallbackFont, paint);
+        canvas->drawString("Renderer: Skia Graphite", 20, extent.height - 45, fallbackFont, paint);
+        canvas->drawString("Press ESC to exit", 20, extent.height - 25, fallbackFont, paint);
+    }
 
     // Snap recording
     auto recording = m_impl->recorder->snap();
