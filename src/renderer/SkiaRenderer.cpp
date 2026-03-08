@@ -731,8 +731,8 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     VkDependencyInfo presentDepInfo{};
     presentDepInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     presentDepInfo.imageMemoryBarrierCount = 2;
-    VkImageMemoryBarrier2 barriers[] = {presentBarrier, srcRestoreBarrier};
-    presentDepInfo.pImageMemoryBarriers = barriers;
+    VkImageMemoryBarrier2 finalBarriers[] = {presentBarrier, srcRestoreBarrier};
+    presentDepInfo.pImageMemoryBarriers = finalBarriers;
     vkCmdPipelineBarrier2(cmdBuffer, &presentDepInfo);
 
     vkEndCommandBuffer(cmdBuffer);
