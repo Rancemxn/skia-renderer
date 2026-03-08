@@ -1,7 +1,5 @@
 # Build outputs - dependencies
-deps/*/out/
-deps/.sccache/
-deps/skia/.sccache/
+deps/
 
 # Build outputs - main project
 build/
