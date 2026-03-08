@@ -29,7 +29,8 @@ public:
 private:
     bool createSkiaContext();
     bool createRenderTarget();
-    void drawContent();
+    bool createBlitResources();
+    void blitToSwapchain(VkImage srcImage);
 
     VulkanContext* m_context = nullptr;
     
