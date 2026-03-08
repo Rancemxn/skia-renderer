@@ -23,14 +23,12 @@ public:
     void shutdown();
     void resize(int width, int height);
 
-    // Render directly to a swapchain image
-    void renderToSwapchainImage(VkImage swapchainImage, VkFormat format, 
-                                 VkImageLayout currentLayout, uint32_t imageIndex);
+    // Render content using the current command buffer within the render pass
+    void render(VkCommandBuffer cmd);
 
 private:
     bool createSkiaContext();
-    bool createSkiaSurface();
-    void drawContent();
+    void drawContent(VkCommandBuffer cmd);
 
     VulkanContext* m_context = nullptr;
     

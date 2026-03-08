@@ -24,7 +24,7 @@ bool Swapchain::initialize(
     m_physicalDevice = physicalDevice;
     m_device = device;
     m_surface = surface;
-    m_renderPass = renderPass;  // May be VK_NULL_HANDLE if not using render passes
+    m_renderPass = renderPass;
 
     if (!createSwapchain(width, height)) {
         return false;
@@ -34,11 +34,8 @@ bool Swapchain::initialize(
         return false;
     }
 
-    // Only create framebuffers if we have a render pass
-    if (m_renderPass != VK_NULL_HANDLE) {
-        if (!createFramebuffers()) {
-            return false;
-        }
+    if (!createFramebuffers()) {
+        return false;
     }
 
     m_initialized = true;
@@ -84,11 +81,7 @@ void Swapchain::recreate(int width, int height) {
     
     createSwapchain(width, height);
     createImageViews();
-    
-    // Only create framebuffers if we have a render pass
-    if (m_renderPass != VK_NULL_HANDLE) {
-        createFramebuffers();
-    }
+    createFramebuffers();
 }
 
 bool Swapchain::createSwapchain(int width, int height) {
@@ -155,8 +148,7 @@ bool Swapchain::createSwapchain(int width, int height) {
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = m_extent;
     createInfo.imageArrayLayers = 1;
-    // Add TRANSFER_DST for potential blit operations and COLOR_ATTACHMENT for Skia rendering
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode = presentMode;

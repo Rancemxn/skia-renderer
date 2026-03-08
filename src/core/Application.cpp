@@ -179,25 +179,18 @@ void Application::update(float deltaTime) {
 }
 
 void Application::render() {
-    // Begin frame
+    // Begin frame (acquires swapchain image, begins render pass)
     if (!m_impl->vulkanContext->beginFrame()) {
         return;
     }
 
-    // Get current swapchain image
-    uint32_t imageIndex = m_impl->vulkanContext->getCurrentImageIndex();
-    VkImage swapchainImage = m_impl->vulkanContext->getSwapchain()->getImage(imageIndex);
-    VkFormat format = m_impl->vulkanContext->getSwapchainFormat();
+    // Get current command buffer
+    VkCommandBuffer cmd = m_impl->vulkanContext->getCurrentCommandBuffer();
 
-    // Render with Skia directly to the swapchain image
-    m_impl->skiaRenderer->renderToSwapchainImage(
-        swapchainImage,
-        format,
-        VK_IMAGE_LAYOUT_UNDEFINED,  // Image was just acquired
-        imageIndex
-    );
+    // Render with Skia (currently just placeholder)
+    m_impl->skiaRenderer->render(cmd);
 
-    // End frame and present
+    // End frame (ends render pass, submits, presents)
     m_impl->vulkanContext->endFrame();
 }
 
