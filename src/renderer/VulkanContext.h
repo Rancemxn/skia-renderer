@@ -41,7 +41,7 @@ public:
 
     // Swapchain management for Skia Graphite integration
     bool beginFrame();  // Acquires swapchain image
-    void endFrame();    // Presents swapchain image
+    void endFrame(VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE);  // Presents swapchain image
     
     void waitIdle();
     void resize(int width, int height);
@@ -62,7 +62,6 @@ public:
     
     // Synchronization objects for Skia Graphite
     VkSemaphore getImageAvailableSemaphore() const;
-    VkSemaphore getRenderFinishedSemaphore() const;
     VkFence getInFlightFence() const;
 
 private:
@@ -79,9 +78,8 @@ private:
     
     std::unique_ptr<Swapchain> m_swapchain;
     
-    // Synchronization
+    // Synchronization - only acquire semaphores and fences
     std::vector<VkSemaphore> m_imageAvailableSemaphores;   // MAX_FRAMES_IN_FLIGHT
-    std::vector<VkSemaphore> m_renderFinishedSemaphores;   // Per image
     std::vector<VkFence> m_inFlightFences;                  // MAX_FRAMES_IN_FLIGHT
     std::vector<uint32_t> m_imageToFrame;
     

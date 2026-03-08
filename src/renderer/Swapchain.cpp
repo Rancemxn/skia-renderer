@@ -112,13 +112,24 @@ bool Swapchain::createSwapchain(int width, int height) {
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
 
-    // Choose surface format (prefer SRGB for correct color rendering)
+    // Choose surface format - prefer UNORM over SRGB for Skia Graphite compatibility
+    // Skia Graphite's WrapBackendTexture validation skips sRGB formats
     VkSurfaceFormatKHR surfaceFormat = formats[0];
     for (const auto& format : formats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB && 
-            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        // Prefer BGRA8_UNORM for best compatibility with Skia Graphite
+        if (format.format == VK_FORMAT_B8G8R8A8_UNORM) {
             surfaceFormat = format;
             break;
+        }
+    }
+    // Fall back to first available if UNORM not found
+    if (surfaceFormat.format != VK_FORMAT_B8G8R8A8_UNORM) {
+        for (const auto& format : formats) {
+            // Try RGBA8_UNORM as second choice
+            if (format.format == VK_FORMAT_R8G8B8A8_UNORM) {
+                surfaceFormat = format;
+                break;
+            }
         }
     }
     m_format = surfaceFormat.format;

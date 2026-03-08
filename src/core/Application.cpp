@@ -196,8 +196,8 @@ void Application::render() {
     // Let Skia Graphite render to the swapchain image
     m_impl->skiaRenderer->render();
 
-    // End frame - present swapchain image
-    m_impl->vulkanContext->endFrame();
+    // End frame - present swapchain image with Skia's semaphore
+    m_impl->vulkanContext->endFrame(m_impl->skiaRenderer->getRenderFinishedSemaphore());
 }
 
 } // namespace skia_renderer
