@@ -16,6 +16,49 @@ namespace skia_renderer {
 
 class Swapchain;
 
+// Vulkan feature level enumeration
+enum class VulkanFeatureLevel {
+    Unknown = 0,
+    Vulkan11,       // Base Vulkan 1.1 (Skia minimum)
+    Vulkan12,       // Vulkan 1.2
+    Vulkan13        // Vulkan 1.3 (full synchronization2 + dynamicRendering)
+};
+
+// Vulkan capabilities detected at runtime
+struct VulkanCapabilities {
+    VulkanFeatureLevel featureLevel = VulkanFeatureLevel::Unknown;
+    
+    // API versions
+    uint32_t instanceApiVersion = 0;    // Instance creation version
+    uint32_t deviceApiVersion = 0;      // Physical device API version
+    
+    // Vulkan 1.3 core features (or via extensions)
+    bool hasSynchronization2 = false;   // Required for vkQueueSubmit2, vkCmdPipelineBarrier2
+    bool hasDynamicRendering = false;   // Required for render pass-less rendering
+    
+    // Extension availability
+    bool hasKhrSynchronization2 = false;    // VK_KHR_synchronization2
+    bool hasKhrDynamicRendering = false;    // VK_EXT_dynamic_rendering (not KHR, but checking)
+    
+    // Helper methods
+    bool requiresVulkan11Fallback() const {
+        return featureLevel == VulkanFeatureLevel::Vulkan11;
+    }
+    
+    bool supportsVulkan13() const {
+        return featureLevel >= VulkanFeatureLevel::Vulkan13;
+    }
+    
+    const char* getFeatureLevelString() const {
+        switch (featureLevel) {
+            case VulkanFeatureLevel::Vulkan11: return "Vulkan 1.1";
+            case VulkanFeatureLevel::Vulkan12: return "Vulkan 1.2";
+            case VulkanFeatureLevel::Vulkan13: return "Vulkan 1.3";
+            default: return "Unknown";
+        }
+    }
+};
+
 struct VulkanDeviceInfo {
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
@@ -60,6 +103,10 @@ public:
     uint32_t getCurrentImageIndex() const { return m_currentImageIndex; }
     Swapchain* getSwapchain() const { return m_swapchain.get(); }
     
+    // Capability getters
+    const VulkanCapabilities& getCapabilities() const { return m_capabilities; }
+    bool supportsVulkan13() const { return m_capabilities.supportsVulkan13(); }
+    
     // Synchronization objects for Skia Graphite
     VkSemaphore getImageAvailableSemaphore() const;
     VkFence getInFlightFence() const;
@@ -68,6 +115,14 @@ private:
     bool createInstance(SDL_Window* window);
     bool createDevice();
     bool createSyncObjects();
+    void detectFeatures();
+    void logCapabilities() const;
+    
+    // Version detection helpers
+    static uint32_t queryMaxSupportedInstanceVersion();
+    static bool checkInstanceExtensionSupport(const char* extensionName, 
+                                               const std::vector<VkExtensionProperties>& availableExtensions);
+    static bool checkDeviceExtensionSupport(VkPhysicalDevice device, const char* extensionName);
 
     VkInstance m_instance = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
@@ -75,6 +130,7 @@ private:
     // vk-bootstrap Instance - must be kept alive for PhysicalDeviceSelector
     vkb::Instance m_vkbInstance;
     VulkanDeviceInfo m_deviceInfo;
+    VulkanCapabilities m_capabilities;
     
     std::unique_ptr<Swapchain> m_swapchain;
     
