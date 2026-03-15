@@ -1,7 +1,7 @@
 #include "Swapchain.h"
+#include "core/Logger.h"
 
 #include <algorithm>
-#include <iostream>
 #include <limits>
 
 namespace skia_renderer {
@@ -143,15 +143,15 @@ bool Swapchain::createSwapchain(int width, int height) {
     // Select based on priority
     if (hasMailbox) {
         presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-        std::cout << "Present mode: MAILBOX (low latency, no tearing)" << std::endl;
+        LOG_INFO("Present mode: MAILBOX (low latency, no tearing)");
     } else if (hasImmediate) {
         presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
-        std::cout << "Present mode: IMMEDIATE (lowest latency, possible tearing)" << std::endl;
+        LOG_INFO("Present mode: IMMEDIATE (lowest latency, possible tearing)");
     } else if (hasFifoRelaxed) {
         presentMode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-        std::cout << "Present mode: FIFO_RELAXED (low latency, occasional tearing)" << std::endl;
+        LOG_INFO("Present mode: FIFO_RELAXED (low latency, occasional tearing)");
     } else {
-        std::cout << "Present mode: FIFO (VSync, stable)" << std::endl;
+        LOG_INFO("Present mode: FIFO (VSync, stable)");
     }
     
     m_presentMode = presentMode;
@@ -188,7 +188,7 @@ bool Swapchain::createSwapchain(int width, int height) {
     }
     
     m_imageUsageFlags = usageFlags;
-    std::cout << "Swapchain usage flags: 0x" << std::hex << usageFlags << std::dec << std::endl;
+    LOG_DEBUG("Swapchain usage flags: 0x{:x}", usageFlags);
 
     // Create swapchain
     VkSwapchainCreateInfoKHR createInfo{};
@@ -207,7 +207,7 @@ bool Swapchain::createSwapchain(int width, int height) {
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
     if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapchain) != VK_SUCCESS) {
-        std::cerr << "Failed to create swapchain" << std::endl;
+        LOG_ERROR("Failed to create swapchain");
         return false;
     }
 
@@ -216,8 +216,8 @@ bool Swapchain::createSwapchain(int width, int height) {
     m_images.resize(imageCount);
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_images.data());
 
-    std::cout << "Swapchain created: " << m_extent.width << "x" << m_extent.height 
-              << ", " << imageCount << " images, format " << m_format << std::endl;
+    LOG_INFO("Swapchain created: {}x{}, {} images, format {}", 
+              m_extent.width, m_extent.height, imageCount, m_format);
     
     return true;
 }
@@ -242,7 +242,7 @@ bool Swapchain::createImageViews() {
         createInfo.subresourceRange.layerCount = 1;
 
         if (vkCreateImageView(m_device, &createInfo, nullptr, &m_imageViews[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create image view " << i << std::endl;
+            LOG_ERROR("Failed to create image view {}", i);
             return false;
         }
     }
@@ -270,7 +270,7 @@ bool Swapchain::createFramebuffers() {
         fbInfo.layers = 1;
 
         if (vkCreateFramebuffer(m_device, &fbInfo, nullptr, &m_framebuffers[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create framebuffer " << i << std::endl;
+            LOG_ERROR("Failed to create framebuffer {}", i);
             return false;
         }
     }

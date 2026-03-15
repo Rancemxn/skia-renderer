@@ -1,6 +1,7 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
 #include "Swapchain.h"
+#include "core/Logger.h"
 
 // Skia core headers
 #include "include/core/SkSurface.h"
@@ -44,7 +45,6 @@
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
 
-#include <iostream>
 #include <chrono>
 #include <cmath>
 
@@ -110,40 +110,40 @@ bool SkiaRenderer::initialize(VulkanContext* context, int width, int height) {
     m_height = height;
     m_impl->startTime = std::chrono::high_resolution_clock::now();
 
-    std::cout << "Initializing Skia Graphite renderer..." << std::endl;
+    LOG_INFO("Initializing Skia Graphite renderer...");
 
     // Check if direct rendering is supported
     m_useOffscreenRendering = !checkDirectRenderingSupported();
 
     if (m_useOffscreenRendering) {
-        std::cout << "  Using offscreen rendering + blit (GPU doesn't support required flags)" << std::endl;
+        LOG_INFO("  Using offscreen rendering + blit (GPU doesn't support required flags)");
     } else {
-        std::cout << "  Using direct-to-swapchain rendering" << std::endl;
+        LOG_INFO("  Using direct-to-swapchain rendering");
     }
 
     if (!createSkiaContext()) {
-        std::cerr << "Failed to create Skia context" << std::endl;
+        LOG_ERROR("Failed to create Skia context");
         return false;
     }
 
     if (m_useOffscreenRendering) {
         if (!createOffscreenRenderTarget()) {
-            std::cerr << "Failed to create offscreen render target" << std::endl;
+            LOG_ERROR("Failed to create offscreen render target");
             return false;
         }
         if (!createBlitResources()) {
-            std::cerr << "Failed to create blit resources" << std::endl;
+            LOG_ERROR("Failed to create blit resources");
             return false;
         }
     } else {
         if (!createSwapchainSurfaces()) {
-            std::cerr << "Failed to create swapchain surfaces" << std::endl;
+            LOG_ERROR("Failed to create swapchain surfaces");
             return false;
         }
     }
 
     m_initialized = true;
-    std::cout << "Skia Graphite renderer initialized (" << width << "x" << height << ")" << std::endl;
+    LOG_INFO("Skia Graphite renderer initialized ({}x{}) ", width, height);
     return true;
 }
 
@@ -154,9 +154,9 @@ bool SkiaRenderer::checkDirectRenderingSupported() const {
     bool hasSampled = (swapchainUsage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0;
     bool hasInputAttachment = (swapchainUsage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) != 0;
 
-    std::cout << "  Swapchain usage flags: 0x" << std::hex << swapchainUsage << std::dec << std::endl;
-    std::cout << "    SAMPLED_BIT: " << (hasSampled ? "yes" : "no") << std::endl;
-    std::cout << "    INPUT_ATTACHMENT_BIT: " << (hasInputAttachment ? "yes" : "no") << std::endl;
+    LOG_DEBUG("  Swapchain usage flags: 0x{:x}", swapchainUsage);
+    LOG_DEBUG("    SAMPLED_BIT: {}", hasSampled ? "yes" : "no");
+    LOG_DEBUG("    INPUT_ATTACHMENT_BIT: {}", hasInputAttachment ? "yes" : "no");
 
     // Skia Graphite needs BOTH SAMPLED_BIT and INPUT_ATTACHMENT_BIT for direct rendering
     return hasSampled && hasInputAttachment;
@@ -167,7 +167,7 @@ void SkiaRenderer::shutdown() {
         return;
     }
 
-    std::cout << "Shutting down Skia Graphite renderer..." << std::endl;
+    LOG_INFO("Shutting down Skia Graphite renderer...");
 
     // Wait for GPU to finish
     if (m_impl->graphiteContext) {
@@ -209,7 +209,7 @@ void SkiaRenderer::shutdown() {
     m_impl->vulkanAllocator.reset();
 
     m_initialized = false;
-    std::cout << "Skia Graphite renderer shut down." << std::endl;
+    LOG_INFO("Skia Graphite renderer shut down.");
 }
 
 void SkiaRenderer::resize(int width, int height) {
@@ -228,7 +228,7 @@ void SkiaRenderer::resize(int width, int height) {
         createOffscreenRenderTarget();
     }
 
-    std::cout << "Skia renderer resized to " << width << "x" << height << std::endl;
+    LOG_INFO("Skia renderer resized to {}x{}", width, height);
 }
 
 bool SkiaRenderer::createSkiaContext() {
@@ -239,10 +239,10 @@ bool SkiaRenderer::createSkiaContext() {
         return vkGetInstanceProcAddr(instance, name);
     };
 
-    std::cout << "  Creating Skia Graphite context..." << std::endl;
+    LOG_INFO("  Creating Skia Graphite context...");
 
     // Initialize font manager (platform-specific)
-    std::cout << "  Initializing font manager..." << std::endl;
+    LOG_INFO("  Initializing font manager...");
 #if defined(_WIN32)
     m_impl->fontMgr = SkFontMgr_New_DirectWrite();
 #elif defined(__linux__)
@@ -253,21 +253,21 @@ bool SkiaRenderer::createSkiaContext() {
     m_impl->fontMgr = SkFontMgr::RefEmpty();
 #endif
     if (!m_impl->fontMgr) {
-        std::cerr << "  Warning: Failed to create platform font manager, using empty font manager" << std::endl;
+        LOG_WARN("  Failed to create platform font manager, using empty font manager");
         m_impl->fontMgr = SkFontMgr::RefEmpty();
     }
 
     // Get a default typeface
     m_impl->defaultTypeface = m_impl->fontMgr->matchFamilyStyle(nullptr, SkFontStyle::Normal());
     if (!m_impl->defaultTypeface) {
-        std::cerr << "  Warning: Failed to match default typeface, trying legacy method" << std::endl;
+        LOG_WARN("  Failed to match default typeface, trying legacy method");
         // Try to get any available font
         int familyCount = m_impl->fontMgr->countFamilies();
         if (familyCount > 0) {
             for (int i = 0; i < familyCount; ++i) {
                 SkString familyName;
                 m_impl->fontMgr->getFamilyName(i, &familyName);
-                std::cout << "    Found font family: " << familyName.c_str() << std::endl;
+                LOG_DEBUG("    Found font family: {}", familyName.c_str());
             }
             // Try to match the first available family
             m_impl->defaultTypeface = m_impl->fontMgr->legacyMakeTypeface(nullptr, SkFontStyle::Normal());
@@ -275,7 +275,7 @@ bool SkiaRenderer::createSkiaContext() {
     }
 
     if (m_impl->defaultTypeface) {
-        std::cout << "  Font typeface loaded successfully" << std::endl;
+        LOG_INFO("  Font typeface loaded successfully");
         // Initialize fonts with the typeface
         m_impl->defaultFont = SkFont(m_impl->defaultTypeface, 20.0f);
         m_impl->defaultFont.setEdging(SkFont::Edging::kSubpixelAntiAlias);
@@ -289,7 +289,7 @@ bool SkiaRenderer::createSkiaContext() {
 
         m_impl->fontsInitialized = true;
     } else {
-        std::cerr << "  Warning: No font typeface available, text rendering may fail" << std::endl;
+        LOG_WARN("  No font typeface available, text rendering may fail");
     }
 
     vkGetPhysicalDeviceFeatures(
@@ -326,17 +326,17 @@ bool SkiaRenderer::createSkiaContext() {
     backendContext.fDeviceFeatures = &m_impl->physicalDeviceFeatures;
     backendContext.fGetProc = getProc;
 
-    std::cout << "  Creating VMA memory allocator..." << std::endl;
+    LOG_INFO("  Creating VMA memory allocator...");
     m_impl->vulkanAllocator = skgpu::VulkanMemoryAllocators::Make(
         backendContext,
         skgpu::ThreadSafe::kNo
     );
 
     if (!m_impl->vulkanAllocator) {
-        std::cerr << "  Failed to create Vulkan memory allocator" << std::endl;
+        LOG_ERROR("  Failed to create Vulkan memory allocator");
         return false;
     }
-    std::cout << "  VMA memory allocator created" << std::endl;
+    LOG_INFO("  VMA memory allocator created");
 
     backendContext.fMemoryAllocator = m_impl->vulkanAllocator;
 
@@ -344,17 +344,17 @@ bool SkiaRenderer::createSkiaContext() {
     m_impl->graphiteContext = skgpu::graphite::ContextFactory::MakeVulkan(backendContext, options);
 
     if (!m_impl->graphiteContext) {
-        std::cerr << "  Failed to create Skia Graphite Vulkan context" << std::endl;
+        LOG_ERROR("  Failed to create Skia Graphite Vulkan context");
         return false;
     }
 
     m_impl->recorder = m_impl->graphiteContext->makeRecorder();
     if (!m_impl->recorder) {
-        std::cerr << "  Failed to create Graphite recorder" << std::endl;
+        LOG_ERROR("  Failed to create Graphite recorder");
         return false;
     }
 
-    std::cout << "  Skia Graphite context created successfully" << std::endl;
+    LOG_INFO("  Skia Graphite context created successfully");
     return true;
 }
 
@@ -366,7 +366,7 @@ bool SkiaRenderer::createSwapchainSurfaces() {
     uint32_t queueIndex = m_context->getGraphicsFamilyIndex();
     VkImageUsageFlags usageFlags = m_context->getSwapchain()->getImageUsageFlags();
 
-    std::cout << "  Creating surfaces for " << imageCount << " swapchain images..." << std::endl;
+    LOG_INFO("  Creating surfaces for {} swapchain images...", imageCount);
 
     m_impl->swapchainImages.resize(imageCount);
 
@@ -378,14 +378,14 @@ bool SkiaRenderer::createSwapchainSurfaces() {
 
         if (imageData.renderFinishedSemaphore == VK_NULL_HANDLE) {
             if (vkCreateSemaphore(device, &semInfo, nullptr, &imageData.renderFinishedSemaphore) != VK_SUCCESS) {
-                std::cerr << "  Failed to create semaphore for image " << i << std::endl;
+                LOG_ERROR("  Failed to create semaphore for image {}", i);
                 return false;
             }
         }
 
         VkImage vkImage = m_context->getSwapchain()->getImage(i);
         if (vkImage == VK_NULL_HANDLE) {
-            std::cerr << "  Failed to get Vulkan image " << i << std::endl;
+            LOG_ERROR("  Failed to get Vulkan image {}", i);
             return false;
         }
 
@@ -408,7 +408,7 @@ bool SkiaRenderer::createSwapchainSurfaces() {
             );
 
         if (!backendTexture.isValid()) {
-            std::cerr << "  Failed to create BackendTexture for image " << i << std::endl;
+            LOG_ERROR("  Failed to create BackendTexture for image {}", i);
             return false;
         }
 
@@ -421,11 +421,11 @@ bool SkiaRenderer::createSwapchainSurfaces() {
         );
 
         if (!imageData.surface) {
-            std::cerr << "  Failed to wrap swapchain image " << i << " as SkSurface" << std::endl;
+            LOG_ERROR("  Failed to wrap swapchain image {} as SkSurface", i);
             return false;
         }
 
-        std::cout << "  Created surface for swapchain image " << i << std::endl;
+        LOG_DEBUG("  Created surface for swapchain image {}", i);
     }
 
     m_impl->surfacesCreated = true;
@@ -438,7 +438,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     VkExtent2D extent = m_context->getSwapchainExtent();
     VkFormat format = m_context->getSwapchainFormat();
 
-    std::cout << "  Creating offscreen render target (" << extent.width << "x" << extent.height << ")..." << std::endl;
+    LOG_INFO("  Creating offscreen render target ({}x{})...", extent.width, extent.height);
 
     // Create image with all the flags Skia Graphite needs
     VkImageCreateInfo imageInfo{};
@@ -464,7 +464,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     if (vkCreateImage(device, &imageInfo, nullptr, &m_impl->offscreenRT.image) != VK_SUCCESS) {
-        std::cerr << "  Failed to create offscreen image" << std::endl;
+        LOG_ERROR("  Failed to create offscreen image");
         return false;
     }
 
@@ -485,7 +485,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     }
 
     if (memoryTypeIndex == UINT32_MAX) {
-        std::cerr << "  Failed to find suitable memory type" << std::endl;
+        LOG_ERROR("  Failed to find suitable memory type");
         return false;
     }
 
@@ -495,7 +495,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     allocInfo.memoryTypeIndex = memoryTypeIndex;
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &m_impl->offscreenRT.memory) != VK_SUCCESS) {
-        std::cerr << "  Failed to allocate memory for offscreen image" << std::endl;
+        LOG_ERROR("  Failed to allocate memory for offscreen image");
         return false;
     }
 
@@ -514,7 +514,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     viewInfo.subresourceRange.layerCount = 1;
 
     if (vkCreateImageView(device, &viewInfo, nullptr, &m_impl->offscreenRT.imageView) != VK_SUCCESS) {
-        std::cerr << "  Failed to create image view" << std::endl;
+        LOG_ERROR("  Failed to create image view");
         return false;
     }
 
@@ -522,7 +522,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     VkSemaphoreCreateInfo semInfo{};
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     if (vkCreateSemaphore(device, &semInfo, nullptr, &m_impl->offscreenRT.skiaFinishedSemaphore) != VK_SUCCESS) {
-        std::cerr << "  Failed to create semaphore" << std::endl;
+        LOG_ERROR("  Failed to create semaphore");
         return false;
     }
 
@@ -531,7 +531,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     if (vkCreateFence(device, &fenceInfo, nullptr, &m_impl->offscreenRT.skiaFinishedFence) != VK_SUCCESS) {
-        std::cerr << "  Failed to create fence" << std::endl;
+        LOG_ERROR("  Failed to create fence");
         return false;
     }
 
@@ -555,7 +555,7 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
         );
 
     if (!backendTexture.isValid()) {
-        std::cerr << "  Failed to create BackendTexture" << std::endl;
+        LOG_ERROR("  Failed to create BackendTexture");
         return false;
     }
 
@@ -568,12 +568,12 @@ bool SkiaRenderer::createOffscreenRenderTarget() {
     );
 
     if (!m_impl->offscreenRT.surface) {
-        std::cerr << "  Failed to create Skia surface" << std::endl;
+        LOG_ERROR("  Failed to create Skia surface");
         return false;
     }
 
     m_impl->offscreenCreated = true;
-    std::cout << "  Offscreen render target created successfully" << std::endl;
+    LOG_INFO("  Offscreen render target created successfully");
     return true;
 }
 
@@ -620,7 +620,7 @@ bool SkiaRenderer::createBlitResources() {
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     if (vkCreateCommandPool(device, &poolInfo, nullptr, &m_impl->blitCommandPool) != VK_SUCCESS) {
-        std::cerr << "  Failed to create blit command pool" << std::endl;
+        LOG_ERROR("  Failed to create blit command pool");
         return false;
     }
 
@@ -633,7 +633,7 @@ bool SkiaRenderer::createBlitResources() {
     allocInfo.commandBufferCount = static_cast<uint32_t>(imageCount);
 
     if (vkAllocateCommandBuffers(device, &allocInfo, m_impl->blitCommandBuffers.data()) != VK_SUCCESS) {
-        std::cerr << "  Failed to allocate blit command buffers" << std::endl;
+        LOG_ERROR("  Failed to allocate blit command buffers");
         return false;
     }
 
@@ -645,7 +645,7 @@ bool SkiaRenderer::createBlitResources() {
 
     for (size_t i = 0; i < imageCount; i++) {
         if (vkCreateFence(device, &fenceInfo, nullptr, &m_impl->blitFences[i]) != VK_SUCCESS) {
-            std::cerr << "  Failed to create blit fence " << i << std::endl;
+            LOG_ERROR("  Failed to create blit fence {}", i);
             return false;
         }
     }
@@ -659,12 +659,12 @@ bool SkiaRenderer::createBlitResources() {
     for (size_t i = 0; i < imageCount; i++) {
         if (vkCreateSemaphore(device, &semInfo, nullptr,
                               &m_impl->swapchainImages[i].renderFinishedSemaphore) != VK_SUCCESS) {
-            std::cerr << "  Failed to create semaphore for image " << i << std::endl;
+            LOG_ERROR("  Failed to create semaphore for image {}", i);
             return false;
         }
     }
 
-    std::cout << "  Blit resources created (" << imageCount << " command buffers, fences)" << std::endl;
+    LOG_INFO("  Blit resources created ({} command buffers, fences)", imageCount);
     return true;
 }
 
@@ -836,7 +836,7 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
 
 void SkiaRenderer::render() {
     if (!m_impl->recorder || !m_impl->graphiteContext) {
-        std::cerr << "Skia not initialized" << std::endl;
+        LOG_ERROR("Skia not initialized");
         return;
     }
 
@@ -851,7 +851,7 @@ void SkiaRenderer::render() {
         // Create offscreen target if needed
         if (!m_impl->offscreenCreated) {
             if (!createOffscreenRenderTarget()) {
-                std::cerr << "Failed to create offscreen render target" << std::endl;
+                LOG_ERROR("Failed to create offscreen render target");
                 return;
             }
         }
@@ -860,7 +860,7 @@ void SkiaRenderer::render() {
         // Create swapchain surfaces if needed
         if (!m_impl->surfacesCreated) {
             if (!createSwapchainSurfaces()) {
-                std::cerr << "Failed to create swapchain surfaces" << std::endl;
+                LOG_ERROR("Failed to create swapchain surfaces");
                 return;
             }
         }
@@ -868,14 +868,14 @@ void SkiaRenderer::render() {
     }
 
     if (!surface) {
-        std::cerr << "No surface available for rendering" << std::endl;
+        LOG_ERROR("No surface available for rendering");
         return;
     }
 
     // Draw
     SkCanvas* canvas = surface->getCanvas();
     if (!canvas) {
-        std::cerr << "Failed to get canvas" << std::endl;
+        LOG_ERROR("Failed to get canvas");
         return;
     }
 
@@ -975,7 +975,7 @@ void SkiaRenderer::render() {
     // Snap recording
     auto recording = m_impl->recorder->snap();
     if (!recording) {
-        std::cerr << "Failed to snap recording" << std::endl;
+        LOG_ERROR("Failed to snap recording");
         return;
     }
 
