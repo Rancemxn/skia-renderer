@@ -33,35 +33,36 @@ public:
         return s_logger;
     }
     
-    // Convenience methods
+    // Convenience methods - use fmt::runtime to allow runtime format strings
+    // This is needed for spdlog 1.17+ which uses fmt 11.x with stricter compile-time checks
     template<typename... Args>
     static void trace(const char* fmt, Args&&... args) {
-        get()->trace(fmt, std::forward<Args>(args)...);
+        get()->trace(spdlog::fmt_lib::runtime(fmt), std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void debug(const char* fmt, Args&&... args) {
-        get()->debug(fmt, std::forward<Args>(args)...);
+        get()->debug(spdlog::fmt_lib::runtime(fmt), std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void info(const char* fmt, Args&&... args) {
-        get()->info(fmt, std::forward<Args>(args)...);
+        get()->info(spdlog::fmt_lib::runtime(fmt), std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void warn(const char* fmt, Args&&... args) {
-        get()->warn(fmt, std::forward<Args>(args)...);
+        get()->warn(spdlog::fmt_lib::runtime(fmt), std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void error(const char* fmt, Args&&... args) {
-        get()->error(fmt, std::forward<Args>(args)...);
+        get()->error(spdlog::fmt_lib::runtime(fmt), std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void critical(const char* fmt, Args&&... args) {
-        get()->critical(fmt, std::forward<Args>(args)...);
+        get()->critical(spdlog::fmt_lib::runtime(fmt), std::forward<Args>(args)...);
     }
 
 private:

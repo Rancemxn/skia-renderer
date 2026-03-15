@@ -172,8 +172,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${SPDLOG_INCLUDE_DIR}
 )
 
-# spdlog header-only mode
-target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_COMPILED_LIB)
+# spdlog is used in header-only mode - no SPDLOG_COMPILED_LIB needed
 
 # ========================================
 # Link Libraries

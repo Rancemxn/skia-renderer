@@ -217,7 +217,7 @@ bool Swapchain::createSwapchain(int width, int height) {
     vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, m_images.data());
 
     LOG_INFO("Swapchain created: {}x{}, {} images, format {}", 
-              m_extent.width, m_extent.height, imageCount, m_format);
+              m_extent.width, m_extent.height, imageCount, static_cast<int>(m_format));
     
     return true;
 }
