@@ -13,30 +13,12 @@ struct SDL_Window;
 // vk-bootstrap - include full header for Instance type
 #include <VkBootstrap.h>
 
+// Include Application.h for VulkanVersionConfig
+#include "core/Application.h"
+
 namespace skia_renderer {
 
 class Swapchain;
-
-// Vulkan version configuration
-struct VulkanVersionConfig {
-    int major = 1;
-    int minor = 3;
-    
-    uint32_t toVkVersion() const {
-        return VK_MAKE_API_VERSION(0, major, minor, 0);
-    }
-    
-    static VulkanVersionConfig fromVkVersion(uint32_t version) {
-        VulkanVersionConfig cfg;
-        cfg.major = VK_API_VERSION_MAJOR(version);
-        cfg.minor = VK_API_VERSION_MINOR(version);
-        return cfg;
-    }
-    
-    std::string toString() const {
-        return std::to_string(major) + "." + std::to_string(minor);
-    }
-};
 
 // Vulkan feature level enumeration
 enum class VulkanFeatureLevel {
