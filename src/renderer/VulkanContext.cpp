@@ -9,8 +9,59 @@
 
 #include <cstring>
 #include <array>
+#include <algorithm>
 
 namespace skia_renderer {
+
+// ============================================================================
+// Version Detection Helpers
+// ============================================================================
+
+uint32_t VulkanContext::queryMaxSupportedInstanceVersion() {
+    // vkEnumerateInstanceVersion is available from Vulkan 1.1
+    // If not available, we can only assume 1.0
+    PFN_vkEnumerateInstanceVersion vkEnumerateInstanceVersion = 
+        reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+            vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceVersion"));
+    
+    if (vkEnumerateInstanceVersion) {
+        uint32_t version = 0;
+        VkResult result = vkEnumerateInstanceVersion(&version);
+        if (result == VK_SUCCESS) {
+            return version;
+        }
+    }
+    
+    // Vulkan 1.0 only
+    return VK_API_VERSION_1_0;
+}
+
+bool VulkanContext::checkInstanceExtensionSupport(
+    const char* extensionName,
+    const std::vector<VkExtensionProperties>& availableExtensions) {
+    
+    return std::any_of(availableExtensions.begin(), availableExtensions.end(),
+        [extensionName](const VkExtensionProperties& ext) {
+            return strcmp(ext.extensionName, extensionName) == 0;
+        });
+}
+
+bool VulkanContext::checkDeviceExtensionSupport(VkPhysicalDevice device, const char* extensionName) {
+    uint32_t extensionCount = 0;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+    
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, extensions.data());
+    
+    return std::any_of(extensions.begin(), extensions.end(),
+        [extensionName](const VkExtensionProperties& ext) {
+            return strcmp(ext.extensionName, extensionName) == 0;
+        });
+}
+
+// ============================================================================
+// Constructor / Destructor
+// ============================================================================
 
 VulkanContext::VulkanContext() = default;
 
@@ -20,7 +71,37 @@ VulkanContext::~VulkanContext() {
     }
 }
 
+// ============================================================================
+// Initialization
+// ============================================================================
+
 bool VulkanContext::initialize(SDL_Window* window) {
+    LOG_INFO("========================================");
+    LOG_INFO("Vulkan Runtime Version Detection");
+    LOG_INFO("========================================");
+    
+    // Step 1: Query max supported instance version
+    uint32_t maxInstanceVersion = queryMaxSupportedInstanceVersion();
+    LOG_INFO("Max supported instance version: {}.{}.{}",
+             VK_API_VERSION_MAJOR(maxInstanceVersion),
+             VK_API_VERSION_MINOR(maxInstanceVersion),
+             VK_API_VERSION_PATCH(maxInstanceVersion));
+    
+    // Determine target instance version (try 1.3 first, fallback to 1.1)
+    uint32_t targetVersion = VK_API_VERSION_1_3;
+    if (maxInstanceVersion < VK_API_VERSION_1_3) {
+        if (maxInstanceVersion >= VK_API_VERSION_1_1) {
+            targetVersion = VK_API_VERSION_1_1;
+            LOG_WARN("Vulkan 1.3 not available, targeting Vulkan 1.1");
+        } else {
+            LOG_ERROR("Vulkan 1.1 is the minimum required version, but only {} is available",
+                     maxInstanceVersion);
+            return false;
+        }
+    }
+    
+    m_capabilities.instanceApiVersion = targetVersion;
+    
     if (!createInstance(window)) {
         return false;
     }
@@ -28,6 +109,10 @@ bool VulkanContext::initialize(SDL_Window* window) {
     if (!createDevice()) {
         return false;
     }
+    
+    // Step 4: Detect and log final capabilities
+    detectFeatures();
+    logCapabilities();
 
     // Create swapchain (no render pass needed for Skia Graphite)
     int width, height;
@@ -50,6 +135,9 @@ bool VulkanContext::initialize(SDL_Window* window) {
     }
 
     m_initialized = true;
+    LOG_INFO("========================================");
+    LOG_INFO("Vulkan Context Initialized Successfully");
+    LOG_INFO("========================================");
     return true;
 }
 
@@ -97,6 +185,10 @@ void VulkanContext::shutdown() {
     LOG_INFO("Vulkan context destroyed.");
 }
 
+// ============================================================================
+// Instance Creation with Version Detection
+// ============================================================================
+
 bool VulkanContext::createInstance(SDL_Window* window) {
     // Get required extensions from SDL
     Uint32 extensionCount = 0;
@@ -119,12 +211,28 @@ bool VulkanContext::createInstance(SDL_Window* window) {
         LOG_DEBUG("  {}", ext);
     }
 
+    // Query available instance extensions
+    uint32_t availableExtCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &availableExtCount, nullptr);
+    std::vector<VkExtensionProperties> availableExtensions(availableExtCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &availableExtCount, availableExtensions.data());
+    
+    // Check for VK_KHR_synchronization2 (needed for Vulkan 1.2 fallback)
+    m_capabilities.hasKhrSynchronization2 = 
+        checkInstanceExtensionSupport(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, availableExtensions);
+    LOG_DEBUG("VK_KHR_synchronization2 extension: {}", 
+             m_capabilities.hasKhrSynchronization2 ? "available" : "not available");
+
+    // Determine target API version
+    uint32_t targetMajor = VK_API_VERSION_MAJOR(m_capabilities.instanceApiVersion);
+    uint32_t targetMinor = VK_API_VERSION_MINOR(m_capabilities.instanceApiVersion);
+
     vkb::InstanceBuilder builder;
     
 #ifdef ENABLE_VULKAN_VALIDATION
     auto instanceResult = builder
         .set_app_name("Skia Renderer")
-        .require_api_version(1, 3)
+        .require_api_version(targetMajor, targetMinor)
         .request_validation_layers()
         .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
         .enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)
@@ -132,7 +240,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
 #else
     auto instanceResult = builder
         .set_app_name("Skia Renderer")
-        .require_api_version(1, 3)
+        .require_api_version(targetMajor, targetMinor)
         .enable_extension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
         .build();
 #endif
@@ -146,6 +254,8 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     m_instance = vkbInstance.instance;
     m_vkbInstance = std::move(vkbInstance);
 
+    LOG_INFO("Vulkan instance created with API version {}.{}", targetMajor, targetMinor);
+
     // Create surface
     if (!SDL_Vulkan_CreateSurface(window, m_instance, nullptr, &m_surface)) {
         LOG_ERROR("Failed to create Vulkan surface: {}", SDL_GetError());
@@ -157,6 +267,10 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     return true;
 }
 
+// ============================================================================
+// Device Creation with Feature Detection
+// ============================================================================
+
 bool VulkanContext::createDevice() {
     if (m_vkbInstance.instance == VK_NULL_HANDLE) {
         LOG_ERROR("Vulkan instance not created via vk-bootstrap");
@@ -165,9 +279,13 @@ bool VulkanContext::createDevice() {
     
     vkb::PhysicalDeviceSelector selector(m_vkbInstance);
     
+    // Determine minimum device version based on instance version
+    uint32_t minMajor = VK_API_VERSION_MAJOR(m_capabilities.instanceApiVersion);
+    uint32_t minMinor = VK_API_VERSION_MINOR(m_capabilities.instanceApiVersion);
+    
     auto physicalDeviceResult = selector
         .set_surface(m_surface)
-        .set_minimum_version(1, 3)
+        .set_minimum_version(minMajor, minMinor)
         .add_required_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)
         .select();
 
@@ -183,24 +301,47 @@ bool VulkanContext::createDevice() {
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(m_deviceInfo.physicalDevice, &props);
     m_deviceName = props.deviceName;
+    m_capabilities.deviceApiVersion = props.apiVersion;
     
     // Print device info
-    uint32_t apiVersion = props.apiVersion;
     LOG_INFO("Physical Device: {}", props.deviceName);
-    LOG_INFO("  API Version: {}.{}.{}",
-              VK_API_VERSION_MAJOR(apiVersion),
-              VK_API_VERSION_MINOR(apiVersion),
-              VK_API_VERSION_PATCH(apiVersion));
+    LOG_INFO("  Device API Version: {}.{}.{}",
+              VK_API_VERSION_MAJOR(props.apiVersion),
+              VK_API_VERSION_MINOR(props.apiVersion),
+              VK_API_VERSION_PATCH(props.apiVersion));
     LOG_INFO("  Driver Version: {}", props.driverVersion);
+    LOG_INFO("  Vendor ID: 0x{:04X}", props.vendorID);
+    LOG_INFO("  Device ID: 0x{:04X}", props.deviceID);
 
-    // Enable Vulkan 1.3 features required for Graphite
+    // Check device extension support
+    m_capabilities.hasKhrSynchronization2 = 
+        checkDeviceExtensionSupport(m_deviceInfo.physicalDevice, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    LOG_DEBUG("Device VK_KHR_synchronization2: {}", 
+             m_capabilities.hasKhrSynchronization2 ? "supported" : "not supported");
+
+    // Determine feature level and create device with appropriate features
+    bool useVulkan13Features = (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_3);
+    
     VkPhysicalDeviceVulkan13Features vulkan13Features{};
     vulkan13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    vulkan13Features.synchronization2 = VK_TRUE;
-    vulkan13Features.dynamicRendering = VK_TRUE;
+    
+    VkPhysicalDeviceSynchronization2FeaturesKHR sync2Features{};
+    sync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
 
     vkb::DeviceBuilder deviceBuilder{vkbPhysicalDevice};
-    deviceBuilder.add_pNext(&vulkan13Features);
+    
+    if (useVulkan13Features) {
+        // Enable Vulkan 1.3 features
+        vulkan13Features.synchronization2 = VK_TRUE;
+        vulkan13Features.dynamicRendering = VK_TRUE;
+        deviceBuilder.add_pNext(&vulkan13Features);
+        LOG_INFO("  Requesting Vulkan 1.3 features: synchronization2, dynamicRendering");
+    } else if (m_capabilities.hasKhrSynchronization2) {
+        // Enable synchronization2 via extension for Vulkan 1.2
+        sync2Features.synchronization2 = VK_TRUE;
+        deviceBuilder.add_pNext(&sync2Features);
+        LOG_INFO("  Requesting VK_KHR_synchronization2 extension features");
+    }
 
     auto deviceResult = deviceBuilder.build();
     if (!deviceResult) {
@@ -231,6 +372,58 @@ bool VulkanContext::createDevice() {
     return true;
 }
 
+// ============================================================================
+// Feature Detection
+// ============================================================================
+
+void VulkanContext::detectFeatures() {
+    // Determine feature level based on device API version
+    if (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_3) {
+        m_capabilities.featureLevel = VulkanFeatureLevel::Vulkan13;
+        m_capabilities.hasSynchronization2 = true;
+        m_capabilities.hasDynamicRendering = true;
+    } else if (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_2) {
+        m_capabilities.featureLevel = VulkanFeatureLevel::Vulkan12;
+        // Check if synchronization2 extension is available and enabled
+        m_capabilities.hasSynchronization2 = m_capabilities.hasKhrSynchronization2;
+        m_capabilities.hasDynamicRendering = false; // Would need VK_EXT_dynamic_rendering
+    } else if (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_1) {
+        m_capabilities.featureLevel = VulkanFeatureLevel::Vulkan11;
+        m_capabilities.hasSynchronization2 = false;
+        m_capabilities.hasDynamicRendering = false;
+    } else {
+        m_capabilities.featureLevel = VulkanFeatureLevel::Unknown;
+        LOG_ERROR("Unsupported Vulkan version detected!");
+    }
+}
+
+void VulkanContext::logCapabilities() const {
+    LOG_INFO("========================================");
+    LOG_INFO("Vulkan Capabilities Summary");
+    LOG_INFO("========================================");
+    LOG_INFO("  Feature Level: {}", m_capabilities.getFeatureLevelString());
+    LOG_INFO("  Instance API Version: {}.{}",
+             VK_API_VERSION_MAJOR(m_capabilities.instanceApiVersion),
+             VK_API_VERSION_MINOR(m_capabilities.instanceApiVersion));
+    LOG_INFO("  Device API Version: {}.{}",
+             VK_API_VERSION_MAJOR(m_capabilities.deviceApiVersion),
+             VK_API_VERSION_MINOR(m_capabilities.deviceApiVersion));
+    LOG_INFO("  ----------------------------------------");
+    LOG_INFO("  synchronization2: {}", m_capabilities.hasSynchronization2 ? "YES" : "NO");
+    LOG_INFO("  dynamicRendering: {}", m_capabilities.hasDynamicRendering ? "YES" : "NO");
+    LOG_INFO("  VK_KHR_synchronization2: {}", m_capabilities.hasKhrSynchronization2 ? "available" : "not available");
+    
+    if (m_capabilities.requiresVulkan11Fallback()) {
+        LOG_WARN("  NOTE: Running in Vulkan 1.1 mode - dynamic degradation path required");
+        LOG_WARN("        vkQueueSubmit2 and synchronization2 APIs will not be available");
+    }
+    LOG_INFO("========================================");
+}
+
+// ============================================================================
+// Synchronization Objects
+// ============================================================================
+
 bool VulkanContext::createSyncObjects() {
     m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
     m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -258,6 +451,10 @@ bool VulkanContext::createSyncObjects() {
 
     return true;
 }
+
+// ============================================================================
+// Frame Management
+// ============================================================================
 
 bool VulkanContext::beginFrame() {
     if (m_frameStarted) {
@@ -321,11 +518,26 @@ void VulkanContext::endFrame(VkSemaphore renderFinishedSemaphore) {
     // Signal the in-flight fence to indicate this frame is complete
     // vkQueuePresentKHR doesn't accept a fence, so we use a null submit
     // with vkQueueSubmit2 (Vulkan 1.3 synchronization2) to signal the fence
-    vkQueueSubmit2(m_deviceInfo.graphicsQueue, 0, nullptr, m_inFlightFences[m_currentFrame]);
+    // 
+    // NOTE: This requires synchronization2 feature. For Vulkan 1.1 fallback,
+    // this would need to use vkQueueSubmit instead.
+    if (m_capabilities.hasSynchronization2) {
+        vkQueueSubmit2(m_deviceInfo.graphicsQueue, 0, nullptr, m_inFlightFences[m_currentFrame]);
+    } else {
+        // Vulkan 1.1 fallback path - use traditional vkQueueSubmit
+        // This is a placeholder for the future dynamic degradation implementation
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        vkQueueSubmit(m_deviceInfo.graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]);
+    }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     m_frameStarted = false;
 }
+
+// ============================================================================
+// Utility Methods
+// ============================================================================
 
 void VulkanContext::waitIdle() {
     if (m_deviceInfo.device) {
