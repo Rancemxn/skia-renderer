@@ -349,7 +349,7 @@ bool VulkanContext::createDevice() {
     VkPhysicalDeviceSynchronization2FeaturesKHR sync2Features{};
     sync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
 
-    bool useVulkan13Features = (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_3);
+    bool useVulkan13Features = (m_capabilities.instanceApiVersion >= VK_API_VERSION_1_3);
     
     if (useVulkan13Features) {
         // Enable Vulkan 1.3 core features
@@ -359,6 +359,8 @@ bool VulkanContext::createDevice() {
         LOG_INFO("  Requesting Vulkan 1.3 features: synchronization2, dynamicRendering");
     } else if (m_capabilities.hasKhrSynchronization2) {
         // Enable synchronization2 via extension for Vulkan 1.2
+        // Must enable both the extension AND the feature
+        deviceBuilder.add_extension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         sync2Features.synchronization2 = VK_TRUE;
         deviceBuilder.add_pNext(&sync2Features);
         LOG_INFO("  Requesting VK_KHR_synchronization2 extension");
