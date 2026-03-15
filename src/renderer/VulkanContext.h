@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <functional>
 
 // Forward declarations
 struct SDL_Window;
@@ -15,6 +16,27 @@ struct SDL_Window;
 namespace skia_renderer {
 
 class Swapchain;
+
+// Vulkan version configuration
+struct VulkanVersionConfig {
+    int major = 1;
+    int minor = 3;
+    
+    uint32_t toVkVersion() const {
+        return VK_MAKE_API_VERSION(0, major, minor, 0);
+    }
+    
+    static VulkanVersionConfig fromVkVersion(uint32_t version) {
+        VulkanVersionConfig cfg;
+        cfg.major = VK_API_VERSION_MAJOR(version);
+        cfg.minor = VK_API_VERSION_MINOR(version);
+        return cfg;
+    }
+    
+    std::string toString() const {
+        return std::to_string(major) + "." + std::to_string(minor);
+    }
+};
 
 // Vulkan feature level enumeration
 enum class VulkanFeatureLevel {
@@ -29,6 +51,7 @@ struct VulkanCapabilities {
     VulkanFeatureLevel featureLevel = VulkanFeatureLevel::Unknown;
     
     // API versions
+    uint32_t requestedVersion = 0;      // User-requested version
     uint32_t instanceApiVersion = 0;    // Instance creation version
     uint32_t deviceApiVersion = 0;      // Physical device API version
     
@@ -38,7 +61,10 @@ struct VulkanCapabilities {
     
     // Extension availability
     bool hasKhrSynchronization2 = false;    // VK_KHR_synchronization2
-    bool hasKhrDynamicRendering = false;    // VK_EXT_dynamic_rendering (not KHR, but checking)
+    bool hasKhrDynamicRendering = false;    // VK_EXT_dynamic_rendering
+    
+    // Fallback mode flag
+    bool isDowngraded = false;  // True if we had to fall back to a lower version
     
     // Helper methods
     bool requiresVulkan11Fallback() const {
@@ -47,6 +73,10 @@ struct VulkanCapabilities {
     
     bool supportsVulkan13() const {
         return featureLevel >= VulkanFeatureLevel::Vulkan13;
+    }
+    
+    bool supportsSynchronization2() const {
+        return hasSynchronization2 || hasKhrSynchronization2;
     }
     
     const char* getFeatureLevelString() const {
@@ -79,7 +109,7 @@ public:
     VulkanContext(VulkanContext&&) = delete;
     VulkanContext& operator=(VulkanContext&&) = delete;
 
-    bool initialize(SDL_Window* window);
+    bool initialize(SDL_Window* window, const VulkanVersionConfig& requestedVersion = {});
     void shutdown();
 
     // Swapchain management for Skia Graphite integration
@@ -106,6 +136,7 @@ public:
     // Capability getters
     const VulkanCapabilities& getCapabilities() const { return m_capabilities; }
     bool supportsVulkan13() const { return m_capabilities.supportsVulkan13(); }
+    bool supportsSynchronization2() const { return m_capabilities.supportsSynchronization2(); }
     
     // Synchronization objects for Skia Graphite
     VkSemaphore getImageAvailableSemaphore() const;
@@ -123,6 +154,10 @@ private:
     static bool checkInstanceExtensionSupport(const char* extensionName, 
                                                const std::vector<VkExtensionProperties>& availableExtensions);
     static bool checkDeviceExtensionSupport(VkPhysicalDevice device, const char* extensionName);
+    
+    // Instance creation with version negotiation
+    bool tryCreateInstance(uint32_t targetVersion);
+    bool tryCreateDevice();
 
     VkInstance m_instance = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
@@ -131,6 +166,7 @@ private:
     vkb::Instance m_vkbInstance;
     VulkanDeviceInfo m_deviceInfo;
     VulkanCapabilities m_capabilities;
+    VulkanVersionConfig m_requestedVersion;
     
     std::unique_ptr<Swapchain> m_swapchain;
     
