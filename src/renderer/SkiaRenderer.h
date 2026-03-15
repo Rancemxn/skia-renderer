@@ -41,6 +41,9 @@ private:
     // Blit methods - uses synchronization2 API (Vulkan 1.3 or VK_KHR_synchronization2)
     void blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore);
     
+    // Vulkan 1.3 path - uses synchronization2 API
+    void blitToSwapchainVulkan13(VkImage srcImage, VkSemaphore waitSemaphore);
+    
     // Vulkan 1.1 fallback - uses legacy synchronization API
     void blitToSwapchainVulkan11(VkImage srcImage, VkSemaphore waitSemaphore);
     
