@@ -12,6 +12,7 @@ option(USE_SYSTEM_SDL "Use system SDL3" OFF)
 option(USE_SYSTEM_VK_BOOTSTRAP "Use system vk-bootstrap" OFF)
 option(USE_SYSTEM_SKIA "Use system Skia" OFF)
 option(USE_SYSTEM_SPDLOG "Use system spdlog" OFF)
+option(USE_SYSTEM_CLI11 "Use system CLI11" OFF)
 
 # ========================================
 # Build Type
@@ -140,6 +141,25 @@ endif()
 message(STATUS "spdlog: ${SPDLOG_INCLUDE_DIR}")
 
 # ========================================
+# CLI11
+# ========================================
+if(USE_SYSTEM_CLI11)
+    find_path(CLI11_INCLUDE_DIR NAMES CLI/CLI.hpp)
+else()
+    set(CLI11_DIR "${CLI11_DIR}" CACHE PATH "CLI11 directory")
+    if(NOT CLI11_DIR)
+        set(CLI11_DIR "${DEPS_DIR}/CLI11")
+    endif()
+    
+    set(CLI11_INCLUDE_DIR "${CLI11_DIR}/include")
+    
+    if(NOT EXISTS "${CLI11_INCLUDE_DIR}/CLI/CLI.hpp")
+        message(FATAL_ERROR "CLI11 not found. Run: python sync.py")
+    endif()
+endif()
+message(STATUS "CLI11: ${CLI11_INCLUDE_DIR}")
+
+# ========================================
 # System Dependencies (Linux/macOS)
 # ========================================
 if(NOT WIN32)
@@ -170,6 +190,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${VK_BOOTSTRAP_INCLUDE_DIR}
     ${SKIA_INCLUDE_DIR}
     ${SPDLOG_INCLUDE_DIR}
+    ${CLI11_INCLUDE_DIR}
 )
 
 # spdlog is used in header-only mode - no SPDLOG_COMPILED_LIB needed
