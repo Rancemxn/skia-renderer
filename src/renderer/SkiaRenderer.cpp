@@ -321,8 +321,9 @@ bool SkiaRenderer::createSkiaContext() {
     backendContext.fDevice = m_context->getDevice();
     backendContext.fQueue = m_context->getGraphicsQueue();
     backendContext.fGraphicsQueueIndex = m_context->getGraphicsFamilyIndex();
-    // Use the actual device API version (supports fallback to 1.1)
-    backendContext.fMaxAPIVersion = m_context->getCapabilities().deviceApiVersion;
+    // Use the instance API version (cannot exceed instance version)
+    // Device may support higher version but we're limited by instance
+    backendContext.fMaxAPIVersion = m_context->getCapabilities().instanceApiVersion;
     backendContext.fVkExtensions = &m_impl->vkExtensions;
     backendContext.fDeviceFeatures = &m_impl->physicalDeviceFeatures;
     backendContext.fGetProc = getProc;
