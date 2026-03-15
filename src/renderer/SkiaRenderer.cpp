@@ -671,8 +671,10 @@ bool SkiaRenderer::createBlitResources() {
 }
 
 void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) {
-    // Check if we should use Vulkan 1.3 synchronization2 or Vulkan 1.1 legacy path
-    if (m_context->supportsSynchronization2()) {
+    // Use Vulkan 1.3 synchronization2 APIs only if we have Vulkan 1.3 core.
+    // Vulkan 1.2 with VK_KHR_synchronization2 extension requires KHR-suffixed functions
+    // which we don't load, so we use Vulkan 1.1 legacy path for that case.
+    if (m_context->supportsVulkan13()) {
         blitToSwapchainVulkan13(srcImage, waitSemaphore);
     } else {
         blitToSwapchainVulkan11(srcImage, waitSemaphore);

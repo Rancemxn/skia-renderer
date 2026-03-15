@@ -546,12 +546,13 @@ void VulkanContext::endFrame(VkSemaphore renderFinishedSemaphore) {
     }
 
     // Signal the in-flight fence
-    // Use synchronization2 API if available, otherwise use legacy API
-    if (m_capabilities.supportsSynchronization2()) {
-        // Vulkan 1.3 or VK_KHR_synchronization2 path
+    // Use synchronization2 API only for Vulkan 1.3 core
+    // Vulkan 1.2 with VK_KHR_synchronization2 requires KHR-suffixed functions
+    if (m_capabilities.supportsVulkan13()) {
+        // Vulkan 1.3 core path
         vkQueueSubmit2(m_deviceInfo.graphicsQueue, 0, nullptr, m_inFlightFences[m_currentFrame]);
     } else {
-        // Vulkan 1.1 fallback path
+        // Vulkan 1.1/1.2 fallback path
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         vkQueueSubmit(m_deviceInfo.graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]);
