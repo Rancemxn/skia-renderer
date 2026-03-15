@@ -20,6 +20,7 @@ from pathlib import Path
 # Default versions
 SDL3_VERSION = "3.4.2"
 VKBOOTSTRAP_VERSION = "1.4.343"
+SPDLOG_VERSION = "1.17.0"
 
 def find_tool(name: str, extra_paths: list = None) -> str:
     """Find a tool in PATH or specified paths"""
@@ -450,7 +451,7 @@ def sync_deps(args):
     # 1. SDL3
     if not args.skip_sdl:
         print("=" * 50)
-        print("[1/3] SDL3")
+        print("[1/4] SDL3")
         print("=" * 50)
         
         sdl_dir = deps_dir / "SDL3"
@@ -472,7 +473,7 @@ def sync_deps(args):
     # 2. vk-bootstrap
     if not args.skip_vkbootstrap:
         print("=" * 50)
-        print("[2/3] vk-bootstrap")
+        print("[2/4] vk-bootstrap")
         print("=" * 50)
         
         vkb_dir = deps_dir / "vk-bootstrap"
@@ -490,10 +491,31 @@ def sync_deps(args):
             print("  [OK] vk-bootstrap")
         print()
     
-    # 3. Skia
+    # 3. spdlog (header-only library)
+    if not args.skip_spdlog:
+        print("=" * 50)
+        print("[3/4] spdlog")
+        print("=" * 50)
+        
+        spdlog_dir = deps_dir / "spdlog"
+        
+        if spdlog_dir.exists() and not overwrite:
+            print("  spdlog already exists, skipping")
+        else:
+            if spdlog_dir.exists():
+                shutil.rmtree(spdlog_dir)
+            
+            url = f"https://github.com/gabime/spdlog/archive/refs/tags/v{SPDLOG_VERSION}.zip"
+            archive = download_file(url, downloads_dir, f"spdlog-{SPDLOG_VERSION}.zip",
+                                   proxy=args.proxy)
+            extract_archive(archive, spdlog_dir)
+            print("  [OK] spdlog")
+        print()
+    
+    # 4. Skia
     if not args.skip_skia:
         print("=" * 50)
-        print("[3/3] Skia")
+        print("[4/4] Skia")
         print("=" * 50)
         
         skia_dir = deps_dir / "skia"
@@ -544,13 +566,14 @@ def sync_deps(args):
     print("=" * 50)
     print()
     print("Dependencies downloaded:")
-    for name in ["SDL3", "vk-bootstrap", "skia", "depot_tools"]:
+    for name in ["SDL3", "vk-bootstrap", "spdlog", "skia", "depot_tools"]:
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
     print("Directory structure:")
     print("  deps/SDL3/              - SDL3 source")
     print("  deps/vk-bootstrap/      - vk-bootstrap source")
+    print("  deps/spdlog/            - spdlog source (header-only)")
     print("  deps/skia/              - Skia source")
     print()
     print("Build outputs will be in:")
@@ -571,6 +594,7 @@ def main():
     parser.add_argument("--skip-skia", action="store_true", help="Skip Skia")
     parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
     parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
+    parser.add_argument("--skip-spdlog", action="store_true", help="Skip spdlog")
     parser.add_argument("--no-overwrite", action="store_true", help="Don't overwrite existing")
     
     # Download options

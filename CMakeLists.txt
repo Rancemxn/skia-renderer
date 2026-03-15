@@ -11,6 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(USE_SYSTEM_SDL "Use system SDL3" OFF)
 option(USE_SYSTEM_VK_BOOTSTRAP "Use system vk-bootstrap" OFF)
 option(USE_SYSTEM_SKIA "Use system Skia" OFF)
+option(USE_SYSTEM_SPDLOG "Use system spdlog" OFF)
 
 # ========================================
 # Build Type
@@ -120,6 +121,25 @@ endif()
 message(STATUS "Skia: ${SKIA_LIBRARY}")
 
 # ========================================
+# spdlog
+# ========================================
+if(USE_SYSTEM_SPDLOG)
+    find_package(spdlog REQUIRED)
+else()
+    set(SPDLOG_DIR "${SPDLOG_DIR}" CACHE PATH "spdlog directory")
+    if(NOT SPDLOG_DIR)
+        set(SPDLOG_DIR "${DEPS_DIR}/spdlog")
+    endif()
+    
+    set(SPDLOG_INCLUDE_DIR "${SPDLOG_DIR}/include")
+    
+    if(NOT EXISTS "${SPDLOG_INCLUDE_DIR}/spdlog/spdlog.h")
+        message(FATAL_ERROR "spdlog not found. Run: python sync.py")
+    endif()
+endif()
+message(STATUS "spdlog: ${SPDLOG_INCLUDE_DIR}")
+
+# ========================================
 # System Dependencies (Linux/macOS)
 # ========================================
 if(NOT WIN32)
@@ -149,7 +169,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${SDL3_INCLUDE_DIRS}
     ${VK_BOOTSTRAP_INCLUDE_DIR}
     ${SKIA_INCLUDE_DIR}
+    ${SPDLOG_INCLUDE_DIR}
 )
+
+# spdlog header-only mode
+target_compile_definitions(${PROJECT_NAME} PRIVATE SPDLOG_COMPILED_LIB)
 
 # ========================================
 # Link Libraries

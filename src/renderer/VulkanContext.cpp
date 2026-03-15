@@ -1,12 +1,12 @@
 #include "VulkanContext.h"
 #include "Swapchain.h"
+#include "core/Logger.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
 #include <VkBootstrap.h>
 
-#include <iostream>
 #include <cstring>
 #include <array>
 
@@ -41,7 +41,7 @@ bool VulkanContext::initialize(SDL_Window* window) {
         VK_NULL_HANDLE,  // No render pass - Skia manages rendering
         width,
         height)) {
-        std::cerr << "Failed to create swapchain" << std::endl;
+        LOG_ERROR("Failed to create swapchain");
         return false;
     }
 
@@ -94,7 +94,7 @@ void VulkanContext::shutdown() {
     }
 
     m_initialized = false;
-    std::cout << "Vulkan context destroyed." << std::endl;
+    LOG_INFO("Vulkan context destroyed.");
 }
 
 bool VulkanContext::createInstance(SDL_Window* window) {
@@ -114,9 +114,9 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
-    std::cout << "Instance extensions:" << std::endl;
+    LOG_DEBUG("Instance extensions:");
     for (const auto& ext : instanceExtensions) {
-        std::cout << "  " << ext << std::endl;
+        LOG_DEBUG("  {}", ext);
     }
 
     vkb::InstanceBuilder builder;
@@ -138,8 +138,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
 #endif
 
     if (!instanceResult) {
-        std::cerr << "Failed to create Vulkan instance: " 
-                  << instanceResult.error().message() << std::endl;
+        LOG_ERROR("Failed to create Vulkan instance: {}", instanceResult.error().message());
         return false;
     }
 
@@ -149,7 +148,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
 
     // Create surface
     if (!SDL_Vulkan_CreateSurface(window, m_instance, nullptr, &m_surface)) {
-        std::cerr << "Failed to create Vulkan surface: " << SDL_GetError() << std::endl;
+        LOG_ERROR("Failed to create Vulkan surface: {}", SDL_GetError());
         vkDestroyInstance(m_instance, nullptr);
         m_instance = VK_NULL_HANDLE;
         return false;
@@ -160,7 +159,7 @@ bool VulkanContext::createInstance(SDL_Window* window) {
 
 bool VulkanContext::createDevice() {
     if (m_vkbInstance.instance == VK_NULL_HANDLE) {
-        std::cerr << "Vulkan instance not created via vk-bootstrap" << std::endl;
+        LOG_ERROR("Vulkan instance not created via vk-bootstrap");
         return false;
     }
     
@@ -173,8 +172,7 @@ bool VulkanContext::createDevice() {
         .select();
 
     if (!physicalDeviceResult) {
-        std::cerr << "Failed to select physical device: " 
-                  << physicalDeviceResult.error().message() << std::endl;
+        LOG_ERROR("Failed to select physical device: {}", physicalDeviceResult.error().message());
         return false;
     }
 
@@ -188,12 +186,12 @@ bool VulkanContext::createDevice() {
     
     // Print device info
     uint32_t apiVersion = props.apiVersion;
-    std::cout << "Physical Device: " << props.deviceName << std::endl;
-    std::cout << "  API Version: " 
-              << VK_API_VERSION_MAJOR(apiVersion) << "."
-              << VK_API_VERSION_MINOR(apiVersion) << "."
-              << VK_API_VERSION_PATCH(apiVersion) << std::endl;
-    std::cout << "  Driver Version: " << props.driverVersion << std::endl;
+    LOG_INFO("Physical Device: {}", props.deviceName);
+    LOG_INFO("  API Version: {}.{}.{}",
+              VK_API_VERSION_MAJOR(apiVersion),
+              VK_API_VERSION_MINOR(apiVersion),
+              VK_API_VERSION_PATCH(apiVersion));
+    LOG_INFO("  Driver Version: {}", props.driverVersion);
 
     // Enable Vulkan 1.3 features required for Graphite
     VkPhysicalDeviceVulkan13Features vulkan13Features{};
@@ -206,8 +204,7 @@ bool VulkanContext::createDevice() {
 
     auto deviceResult = deviceBuilder.build();
     if (!deviceResult) {
-        std::cerr << "Failed to create device: " 
-                  << deviceResult.error().message() << std::endl;
+        LOG_ERROR("Failed to create device: {}", deviceResult.error().message());
         return false;
     }
 
@@ -219,7 +216,7 @@ bool VulkanContext::createDevice() {
     auto presentQueueResult = vkbDevice.get_queue(vkb::QueueType::present);
     
     if (!graphicsQueueResult || !presentQueueResult) {
-        std::cerr << "Failed to get device queues" << std::endl;
+        LOG_ERROR("Failed to get device queues");
         return false;
     }
 
@@ -228,8 +225,8 @@ bool VulkanContext::createDevice() {
     m_deviceInfo.graphicsFamilyIndex = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
     m_deviceInfo.presentFamilyIndex = vkbDevice.get_queue_index(vkb::QueueType::present).value();
 
-    std::cout << "  Graphics Queue Family: " << m_deviceInfo.graphicsFamilyIndex << std::endl;
-    std::cout << "  Present Queue Family: " << m_deviceInfo.presentFamilyIndex << std::endl;
+    LOG_INFO("  Graphics Queue Family: {}", m_deviceInfo.graphicsFamilyIndex);
+    LOG_INFO("  Present Queue Family: {}", m_deviceInfo.presentFamilyIndex);
 
     return true;
 }
@@ -249,12 +246,12 @@ bool VulkanContext::createSyncObjects() {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (vkCreateFence(m_deviceInfo.device, &fenceInfo, nullptr, 
                           &m_inFlightFences[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create fences" << std::endl;
+            LOG_ERROR("Failed to create fences");
             return false;
         }
         if (vkCreateSemaphore(m_deviceInfo.device, &semaphoreInfo, nullptr, 
                               &m_imageAvailableSemaphores[i]) != VK_SUCCESS) {
-            std::cerr << "Failed to create image available semaphores" << std::endl;
+            LOG_ERROR("Failed to create image available semaphores");
             return false;
         }
     }
@@ -284,7 +281,7 @@ bool VulkanContext::beginFrame() {
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         return false;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        std::cerr << "Failed to acquire swapchain image" << std::endl;
+        LOG_ERROR("Failed to acquire swapchain image");
         return false;
     }
 
@@ -318,7 +315,7 @@ void VulkanContext::endFrame(VkSemaphore renderFinishedSemaphore) {
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         // Swapchain needs recreation
     } else if (result != VK_SUCCESS) {
-        std::cerr << "Failed to present swapchain image" << std::endl;
+        LOG_ERROR("Failed to present swapchain image");
     }
 
     // Signal the in-flight fence to indicate this frame is complete
