@@ -232,6 +232,8 @@ elseif(USING_CLANG_WIN)
         -Wno-gnu-zero-variadic-macro-arguments
         -Wno-nested-anon-types
         -Wno-gnu-anonymous-struct
+        # Disable MSVC extension warnings from spdlog on Windows
+        -Wno-language-extension-token
         $<$<CONFIG:Release>:-O3>
         $<$<CONFIG:Debug>:-g -O0>
     )

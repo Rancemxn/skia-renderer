@@ -66,7 +66,7 @@ public:
     }
 
 private:
-    static std::shared_ptr<spdlog::logger> s_logger;
+    inline static std::shared_ptr<spdlog::logger> s_logger;
 };
 
 // Macro shortcuts for convenience
