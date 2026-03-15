@@ -364,6 +364,7 @@ def build_main_project(script_dir: Path, build_type: str,
     vkb_dir = deps_dir / "vk-bootstrap" / "out" / build_type
     skia_dir = deps_dir / "skia"
     spdlog_dir = deps_dir / "spdlog"
+    cli11_dir = deps_dir / "CLI11"
     
     # CMake configure
     cmd = [
@@ -388,7 +389,8 @@ def build_main_project(script_dir: Path, build_type: str,
         f"-DSDL3_DIR={sdl3_dir}",
         f"-DVKBOOTSTRAP_DIR={vkb_dir}",
         f"-DSKIA_DIR={skia_dir}",
-        f"-DSPDLOG_DIR={spdlog_dir}"
+        f"-DSPDLOG_DIR={spdlog_dir}",
+        f"-DCLI11_DIR={cli11_dir}"
     ])
     
     if cmake_args:

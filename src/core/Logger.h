@@ -17,8 +17,8 @@ public:
             console_sink->set_pattern("%^[%l]%$ %v");
             
             s_logger = std::make_shared<spdlog::logger>("skia-renderer", console_sink);
-            s_logger->set_level(spdlog::level::trace);
-            s_logger->flush_on(spdlog::level::trace);
+            s_logger->set_level(spdlog::level::info);
+            s_logger->flush_on(spdlog::level::info);
             
             // Register as default logger
             spdlog::register_logger(s_logger);
@@ -31,6 +31,12 @@ public:
             init();
         }
         return s_logger;
+    }
+    
+    // Set log level
+    static void set_level(spdlog::level::level_enum level) {
+        get()->set_level(level);
+        get()->flush_on(level);
     }
     
     // Convenience methods - use fmt::runtime to allow runtime format strings
