@@ -400,16 +400,18 @@ bool VulkanContext::createDevice() {
 // ============================================================================
 
 void VulkanContext::detectFeatures() {
-    // Determine feature level based on device API version and available extensions
-    if (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_3) {
+    // Determine feature level based on INSTANCE API version
+    // We cannot use features from a higher API version than our instance
+    // even if the device supports them
+    if (m_capabilities.instanceApiVersion >= VK_API_VERSION_1_3) {
         m_capabilities.featureLevel = VulkanFeatureLevel::Vulkan13;
         m_capabilities.hasSynchronization2 = true;
         m_capabilities.hasDynamicRendering = true;
-    } else if (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_2) {
+    } else if (m_capabilities.instanceApiVersion >= VK_API_VERSION_1_2) {
         m_capabilities.featureLevel = VulkanFeatureLevel::Vulkan12;
         m_capabilities.hasSynchronization2 = m_capabilities.hasKhrSynchronization2;
         m_capabilities.hasDynamicRendering = false;
-    } else if (m_capabilities.deviceApiVersion >= VK_API_VERSION_1_1) {
+    } else if (m_capabilities.instanceApiVersion >= VK_API_VERSION_1_1) {
         m_capabilities.featureLevel = VulkanFeatureLevel::Vulkan11;
         m_capabilities.hasSynchronization2 = false;
         m_capabilities.hasDynamicRendering = false;
