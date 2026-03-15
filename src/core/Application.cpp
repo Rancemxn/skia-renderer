@@ -19,14 +19,17 @@ struct Application::Impl {
     std::string title;
     int width;
     int height;
+    VulkanVersionConfig vulkanVersion;
     bool running = false;
     bool initialized = false;
     
-    Impl(const std::string& t, int w, int h) : title(t), width(w), height(h) {}
+    Impl(const std::string& t, int w, int h, const VulkanVersionConfig& v) 
+        : title(t), width(w), height(h), vulkanVersion(v) {}
 };
 
-Application::Application(const std::string& title, int width, int height)
-    : m_impl(std::make_unique<Impl>(title, width, height)) {
+Application::Application(const std::string& title, int width, int height,
+                         const VulkanVersionConfig& vulkanVersion)
+    : m_impl(std::make_unique<Impl>(title, width, height, vulkanVersion)) {
 }
 
 Application::~Application() {
@@ -56,9 +59,9 @@ bool Application::initialize() {
         return false;
     }
 
-    // Initialize Vulkan context
+    // Initialize Vulkan context with requested version
     m_impl->vulkanContext = std::make_unique<VulkanContext>();
-    if (!m_impl->vulkanContext->initialize(m_impl->window)) {
+    if (!m_impl->vulkanContext->initialize(m_impl->window, m_impl->vulkanVersion)) {
         LOG_ERROR("Failed to initialize Vulkan context");
         SDL_DestroyWindow(m_impl->window);
         SDL_Quit();
@@ -84,6 +87,7 @@ bool Application::initialize() {
     LOG_INFO("Application initialized successfully!");
     LOG_INFO("  Window: {}x{}", m_impl->width, m_impl->height);
     LOG_INFO("  GPU: {}", m_impl->vulkanContext->getDeviceName());
+    LOG_INFO("  Vulkan: {}", m_impl->vulkanContext->getCapabilities().getFeatureLevelString());
     
     return true;
 }

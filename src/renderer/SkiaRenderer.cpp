@@ -321,7 +321,8 @@ bool SkiaRenderer::createSkiaContext() {
     backendContext.fDevice = m_context->getDevice();
     backendContext.fQueue = m_context->getGraphicsQueue();
     backendContext.fGraphicsQueueIndex = m_context->getGraphicsFamilyIndex();
-    backendContext.fMaxAPIVersion = VK_API_VERSION_1_3;
+    // Use the actual device API version (supports fallback to 1.1)
+    backendContext.fMaxAPIVersion = m_context->getCapabilities().deviceApiVersion;
     backendContext.fVkExtensions = &m_impl->vkExtensions;
     backendContext.fDeviceFeatures = &m_impl->physicalDeviceFeatures;
     backendContext.fGetProc = getProc;
@@ -669,20 +670,25 @@ bool SkiaRenderer::createBlitResources() {
 }
 
 void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) {
+    // Check if we should use Vulkan 1.3 synchronization2 or Vulkan 1.1 legacy path
+    if (m_context->supportsSynchronization2()) {
+        blitToSwapchainVulkan13(srcImage, waitSemaphore);
+    } else {
+        blitToSwapchainVulkan11(srcImage, waitSemaphore);
+    }
+}
+
+void SkiaRenderer::blitToSwapchainVulkan13(VkImage srcImage, VkSemaphore waitSemaphore) {
     VkDevice device = m_context->getDevice();
     uint32_t imageIndex = m_context->getCurrentImageIndex();
     VkImage dstImage = m_context->getSwapchain()->getImage(imageIndex);
     VkExtent2D extent = m_context->getSwapchainExtent();
 
-    // Get per-image command buffer and fence
     VkCommandBuffer cmdBuffer = m_impl->blitCommandBuffers[imageIndex];
     VkFence fence = m_impl->blitFences[imageIndex];
 
-    // Wait for previous use of this command buffer to complete
     vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences(device, 1, &fence);
-
-    // Reset and begin command buffer
     vkResetCommandBuffer(cmdBuffer, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -690,7 +696,7 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmdBuffer, &beginInfo);
 
-    // Transition src image to TRANSFER_SRC
+    // Transition src image to TRANSFER_SRC (using synchronization2)
     VkImageMemoryBarrier2 srcBarrier{};
     srcBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     srcBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -758,7 +764,6 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     blitInfo.regionCount = 1;
     blitInfo.pRegions = &blitRegion;
     blitInfo.filter = VK_FILTER_LINEAR;
-
     vkCmdBlitImage2(cmdBuffer, &blitInfo);
 
     // Transition dst image to PRESENT_SRC
@@ -779,7 +784,7 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     presentBarrier.subresourceRange.baseArrayLayer = 0;
     presentBarrier.subresourceRange.layerCount = 1;
 
-    // Transition src image back to COLOR_ATTACHMENT_OPTIMAL for next frame
+    // Transition src image back to COLOR_ATTACHMENT_OPTIMAL
     VkImageMemoryBarrier2 srcRestoreBarrier{};
     srcRestoreBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     srcRestoreBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
@@ -806,7 +811,7 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
 
     vkEndCommandBuffer(cmdBuffer);
 
-    // Submit with synchronization
+    // Submit with synchronization2 API
     VkSemaphoreSubmitInfo waitInfo{};
     waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     waitInfo.semaphore = waitSemaphore;
@@ -830,8 +835,153 @@ void SkiaRenderer::blitToSwapchain(VkImage srcImage, VkSemaphore waitSemaphore) 
     submitInfo.signalSemaphoreInfoCount = 1;
     submitInfo.pSignalSemaphoreInfos = &signalInfo;
 
-    // Submit with fence for synchronization
     vkQueueSubmit2(m_context->getGraphicsQueue(), 1, &submitInfo, fence);
+}
+
+void SkiaRenderer::blitToSwapchainVulkan11(VkImage srcImage, VkSemaphore waitSemaphore) {
+    // Vulkan 1.1 fallback using legacy synchronization APIs
+    VkDevice device = m_context->getDevice();
+    uint32_t imageIndex = m_context->getCurrentImageIndex();
+    VkImage dstImage = m_context->getSwapchain()->getImage(imageIndex);
+    VkExtent2D extent = m_context->getSwapchainExtent();
+
+    VkCommandBuffer cmdBuffer = m_impl->blitCommandBuffers[imageIndex];
+    VkFence fence = m_impl->blitFences[imageIndex];
+
+    vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(device, 1, &fence);
+    vkResetCommandBuffer(cmdBuffer, 0);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+
+    // Transition src image to TRANSFER_SRC (using legacy barrier)
+    VkImageMemoryBarrier srcBarrier{};
+    srcBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    srcBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    srcBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    srcBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    srcBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    srcBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    srcBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    srcBarrier.image = srcImage;
+    srcBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    srcBarrier.subresourceRange.baseMipLevel = 0;
+    srcBarrier.subresourceRange.levelCount = 1;
+    srcBarrier.subresourceRange.baseArrayLayer = 0;
+    srcBarrier.subresourceRange.layerCount = 1;
+
+    // Transition dst image to TRANSFER_DST
+    VkImageMemoryBarrier dstBarrier{};
+    dstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    dstBarrier.srcAccessMask = 0;
+    dstBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    dstBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    dstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    dstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    dstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    dstBarrier.image = dstImage;
+    dstBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    dstBarrier.subresourceRange.baseMipLevel = 0;
+    dstBarrier.subresourceRange.levelCount = 1;
+    dstBarrier.subresourceRange.baseArrayLayer = 0;
+    dstBarrier.subresourceRange.layerCount = 1;
+
+    VkImageMemoryBarrier barriers[] = {srcBarrier, dstBarrier};
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        2, barriers
+    );
+
+    // Blit using legacy API
+    VkImageBlit blitRegion{};
+    blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blitRegion.srcSubresource.mipLevel = 0;
+    blitRegion.srcSubresource.baseArrayLayer = 0;
+    blitRegion.srcSubresource.layerCount = 1;
+    blitRegion.srcOffsets[0] = {0, 0, 0};
+    blitRegion.srcOffsets[1] = {static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1};
+    blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blitRegion.dstSubresource.mipLevel = 0;
+    blitRegion.dstSubresource.baseArrayLayer = 0;
+    blitRegion.dstSubresource.layerCount = 1;
+    blitRegion.dstOffsets[0] = {0, 0, 0};
+    blitRegion.dstOffsets[1] = {static_cast<int32_t>(extent.width), static_cast<int32_t>(extent.height), 1};
+
+    vkCmdBlitImage(
+        cmdBuffer,
+        srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1, &blitRegion,
+        VK_FILTER_LINEAR
+    );
+
+    // Transition dst image to PRESENT_SRC
+    VkImageMemoryBarrier presentBarrier{};
+    presentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    presentBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    presentBarrier.dstAccessMask = 0;
+    presentBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    presentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    presentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    presentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    presentBarrier.image = dstImage;
+    presentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    presentBarrier.subresourceRange.baseMipLevel = 0;
+    presentBarrier.subresourceRange.levelCount = 1;
+    presentBarrier.subresourceRange.baseArrayLayer = 0;
+    presentBarrier.subresourceRange.layerCount = 1;
+
+    // Transition src image back to COLOR_ATTACHMENT_OPTIMAL
+    VkImageMemoryBarrier srcRestoreBarrier{};
+    srcRestoreBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    srcRestoreBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    srcRestoreBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+    srcRestoreBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    srcRestoreBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    srcRestoreBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    srcRestoreBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    srcRestoreBarrier.image = srcImage;
+    srcRestoreBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    srcRestoreBarrier.subresourceRange.baseMipLevel = 0;
+    srcRestoreBarrier.subresourceRange.levelCount = 1;
+    srcRestoreBarrier.subresourceRange.baseArrayLayer = 0;
+    srcRestoreBarrier.subresourceRange.layerCount = 1;
+
+    VkImageMemoryBarrier finalBarriers[] = {presentBarrier, srcRestoreBarrier};
+    vkCmdPipelineBarrier(
+        cmdBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        2, finalBarriers
+    );
+
+    vkEndCommandBuffer(cmdBuffer);
+
+    // Submit using legacy API
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_TRANSFER_BIT};
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = &waitSemaphore;
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffer;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &m_impl->swapchainImages[imageIndex].renderFinishedSemaphore;
+
+    vkQueueSubmit(m_context->getGraphicsQueue(), 1, &submitInfo, fence);
 }
 
 void SkiaRenderer::render() {
@@ -917,7 +1067,9 @@ void SkiaRenderer::render() {
 
     // Draw title and FPS with default font (20px)
     if (m_impl->fontsInitialized) {
-        canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 35, m_impl->defaultFont, paint);
+        // Show Vulkan version dynamically
+        std::string vulkanStr = std::string("Skia Graphite + ") + m_context->getCapabilities().getFeatureLevelString();
+        canvas->drawString(vulkanStr.c_str(), 20, 35, m_impl->defaultFont, paint);
 
         // Draw FPS
         std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
@@ -948,7 +1100,9 @@ void SkiaRenderer::render() {
         // Fallback: try to draw without pre-loaded font (may not work)
         SkFont fallbackFont;
         fallbackFont.setSize(20);
-        canvas->drawString("Skia Graphite + Vulkan 1.3", 20, 35, fallbackFont, paint);
+        // Show Vulkan version dynamically
+        std::string vulkanStr = std::string("Skia Graphite + ") + m_context->getCapabilities().getFeatureLevelString();
+        canvas->drawString(vulkanStr.c_str(), 20, 35, fallbackFont, paint);
         std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
         canvas->drawString(fpsStr.c_str(), 20, 60, fallbackFont, paint);
         fallbackFont.setSize(14);
