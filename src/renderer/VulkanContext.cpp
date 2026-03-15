@@ -338,8 +338,8 @@ bool VulkanContext::createDevice() {
     LOG_DEBUG("Device VK_KHR_synchronization2: {}", 
              m_capabilities.hasKhrSynchronization2 ? "supported" : "not supported");
 
-    // Build device with appropriate features based on API version
-    vkb::DeviceBuilder deviceBuilder{vkbPhysicalDevice};
+    // Determine which features to use based on instance API version
+    bool useVulkan13Features = (m_capabilities.instanceApiVersion >= VK_API_VERSION_1_3);
     
     // Vulkan 1.3 features
     VkPhysicalDeviceVulkan13Features vulkan13Features{};
@@ -349,24 +349,26 @@ bool VulkanContext::createDevice() {
     VkPhysicalDeviceSynchronization2FeaturesKHR sync2Features{};
     sync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
 
-    bool useVulkan13Features = (m_capabilities.instanceApiVersion >= VK_API_VERSION_1_3);
-    
     if (useVulkan13Features) {
         // Enable Vulkan 1.3 core features
         vulkan13Features.synchronization2 = VK_TRUE;
         vulkan13Features.dynamicRendering = VK_TRUE;
-        deviceBuilder.add_pNext(&vulkan13Features);
+        // Enable extension features via PhysicalDevice
+        vkbPhysicalDevice.enable_extension_features_if_present(vulkan13Features);
         LOG_INFO("  Requesting Vulkan 1.3 features: synchronization2, dynamicRendering");
     } else if (m_capabilities.hasKhrSynchronization2) {
         // Enable synchronization2 via extension for Vulkan 1.2
-        // Must enable both the extension AND the feature
-        deviceBuilder.add_extension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+        // Must enable the extension on PhysicalDevice first
+        vkbPhysicalDevice.enable_extension_if_present(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         sync2Features.synchronization2 = VK_TRUE;
-        deviceBuilder.add_pNext(&sync2Features);
+        vkbPhysicalDevice.enable_extension_features_if_present(sync2Features);
         LOG_INFO("  Requesting VK_KHR_synchronization2 extension");
     } else {
         LOG_WARN("  No synchronization2 support - will use Vulkan 1.1 fallback path");
     }
+
+    // Build device
+    vkb::DeviceBuilder deviceBuilder{vkbPhysicalDevice};
 
     auto deviceResult = deviceBuilder.build();
     if (!deviceResult) {
