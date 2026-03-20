@@ -14,6 +14,7 @@
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 
 // OpenGL headers
 #include <SDL3/SDL_opengl.h>

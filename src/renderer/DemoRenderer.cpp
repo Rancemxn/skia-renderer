@@ -227,6 +227,8 @@ void DemoRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, f
 
 void DemoRenderer::drawText(SkCanvas* canvas, int width, int height, float time,
                             const std::string& backendInfo, const std::string& rendererName) {
+    (void)time; // Reserved for future animations
+    
     // Draw text
     SkPaint textPaint;
     textPaint.setColor(SK_ColorWHITE);
