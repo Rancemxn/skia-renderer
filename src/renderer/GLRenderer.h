@@ -6,6 +6,7 @@
 namespace skia_renderer {
 
 class GLContext;
+class DemoRenderer;
 
 /**
  * @brief Ganesh OpenGL renderer implementation
@@ -38,6 +39,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     std::unique_ptr<GLContext> m_glContext;
+    std::unique_ptr<DemoRenderer> m_demoRenderer;
     SDL_Window* m_window = nullptr;
     int m_width = 0;
     int m_height = 0;

@@ -1,6 +1,7 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
 #include "Swapchain.h"
+#include "DemoRenderer.h"
 #include "core/Logger.h"
 
 // Skia core headers
@@ -83,20 +84,16 @@ struct SkiaRenderer::Impl {
     // Timing for animation
     std::chrono::high_resolution_clock::time_point startTime;
 
-    // Font management
-    sk_sp<SkFontMgr> fontMgr;
-    sk_sp<SkTypeface> defaultTypeface;
-    SkFont defaultFont;
-    SkFont smallFont;
-    bool fontsInitialized = false;
-
     // Debug
     uint64_t frameCount = 0;
     bool surfacesCreated = false;
     bool offscreenCreated = false;
 };
 
-SkiaRenderer::SkiaRenderer() : m_impl(std::make_unique<Impl>()) {}
+SkiaRenderer::SkiaRenderer() 
+    : m_impl(std::make_unique<Impl>())
+    , m_demoRenderer(std::make_unique<DemoRenderer>()) {
+}
 
 SkiaRenderer::~SkiaRenderer() {
     if (m_initialized) {
@@ -241,55 +238,9 @@ bool SkiaRenderer::createSkiaContext() {
 
     LOG_INFO("  Creating Skia Graphite context...");
 
-    // Initialize font manager (platform-specific)
-    LOG_INFO("  Initializing font manager...");
-#if defined(_WIN32)
-    m_impl->fontMgr = SkFontMgr_New_DirectWrite();
-#elif defined(__linux__)
-    m_impl->fontMgr = SkFontMgr_New_FontConfig(nullptr, nullptr);
-#elif defined(__APPLE__)
-    m_impl->fontMgr = SkFontMgr_New_CoreText(nullptr);
-#else
-    m_impl->fontMgr = SkFontMgr::RefEmpty();
-#endif
-    if (!m_impl->fontMgr) {
-        LOG_WARN("  Failed to create platform font manager, using empty font manager");
-        m_impl->fontMgr = SkFontMgr::RefEmpty();
-    }
-
-    // Get a default typeface
-    m_impl->defaultTypeface = m_impl->fontMgr->matchFamilyStyle(nullptr, SkFontStyle::Normal());
-    if (!m_impl->defaultTypeface) {
-        LOG_WARN("  Failed to match default typeface, trying legacy method");
-        // Try to get any available font
-        int familyCount = m_impl->fontMgr->countFamilies();
-        if (familyCount > 0) {
-            for (int i = 0; i < familyCount; ++i) {
-                SkString familyName;
-                m_impl->fontMgr->getFamilyName(i, &familyName);
-                LOG_DEBUG("    Found font family: {}", familyName.c_str());
-            }
-            // Try to match the first available family
-            m_impl->defaultTypeface = m_impl->fontMgr->legacyMakeTypeface(nullptr, SkFontStyle::Normal());
-        }
-    }
-
-    if (m_impl->defaultTypeface) {
-        LOG_INFO("  Font typeface loaded successfully");
-        // Initialize fonts with the typeface
-        m_impl->defaultFont = SkFont(m_impl->defaultTypeface, 20.0f);
-        m_impl->defaultFont.setEdging(SkFont::Edging::kSubpixelAntiAlias);
-        m_impl->defaultFont.setSubpixel(true);
-        m_impl->defaultFont.setHinting(SkFontHinting::kSlight);
-
-        m_impl->smallFont = SkFont(m_impl->defaultTypeface, 14.0f);
-        m_impl->smallFont.setEdging(SkFont::Edging::kSubpixelAntiAlias);
-        m_impl->smallFont.setSubpixel(true);
-        m_impl->smallFont.setHinting(SkFontHinting::kSlight);
-
-        m_impl->fontsInitialized = true;
-    } else {
-        LOG_WARN("  No font typeface available, text rendering may fail");
+    // Initialize fonts using shared demo renderer
+    if (!m_demoRenderer->initializeFonts()) {
+        LOG_WARN("  Failed to initialize fonts for demo renderer");
     }
 
     vkGetPhysicalDeviceFeatures(
@@ -1032,102 +983,17 @@ void SkiaRenderer::render() {
         return;
     }
 
-    auto now = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float>(now - m_impl->startTime).count();
+    // Update demo renderer state
+    m_demoRenderer->setFPS(m_fps);
 
-    // Clear
-    canvas->clear(SkColorSetRGB(25, 30, 45));
-
-    // Draw rotating rectangle
-    SkPaint paint;
-    paint.setColor(SkColorSetARGB(255, 100, 180, 255));
-    paint.setAntiAlias(true);
-
-    float centerX = extent.width / 2.0f;
-    float centerY = extent.height / 2.0f;
-    float size = std::min(static_cast<float>(extent.width), static_cast<float>(extent.height)) * 0.15f;
-
-    canvas->save();
-    canvas->translate(centerX, centerY);
-    canvas->rotate(time * 45.0f);
-
-    SkRect rect = SkRect::MakeXYWH(-size/2, -size/2, size, size);
-    canvas->drawRect(rect, paint);
-    canvas->restore();
-
-    // Draw pulsing circle
-    float pulseScale = 1.0f + 0.3f * std::sin(time * 3.0f);
-    paint.setColor(SkColorSetARGB(200, 255, 120, 100));
-    canvas->drawCircle(
-        centerX + std::sin(time * 1.5f) * 80,
-        centerY + std::cos(time * 1.5f) * 80,
-        25 * pulseScale,
-        paint
-    );
-
-    // Draw text (use pre-loaded fonts with valid typeface)
-    paint.setColor(SK_ColorWHITE);
-
-    // Draw title and FPS with default font (20px)
-    if (m_impl->fontsInitialized) {
-        // Show Vulkan version dynamically
-        std::string vulkanStr = std::string("Skia Graphite + ") + m_context->getCapabilities().getFeatureLevelString();
-        canvas->drawString(vulkanStr.c_str(), 20, 35, m_impl->defaultFont, paint);
-
-        // Draw FPS
-        std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
-        canvas->drawString(fpsStr.c_str(), 20, 60, m_impl->defaultFont, paint);
-
-        // Draw info with small font (14px)
-        paint.setColor(SkColorSetARGB(180, 200, 200, 200));
-
-        std::string modeStr = m_useOffscreenRendering ? "Mode: Offscreen + Blit" : "Mode: Direct Rendering";
-        canvas->drawString(modeStr.c_str(), 20, extent.height - 85, m_impl->smallFont, paint);
-        
-        // Display present mode
-        const char* presentModeStr = "Unknown";
-        VkPresentModeKHR presentMode = m_context->getSwapchain()->getPresentMode();
-        switch (presentMode) {
-            case VK_PRESENT_MODE_MAILBOX_KHR: presentModeStr = "Mailbox"; break;
-            case VK_PRESENT_MODE_IMMEDIATE_KHR: presentModeStr = "Immediate"; break;
-            case VK_PRESENT_MODE_FIFO_RELAXED_KHR: presentModeStr = "FIFO Relaxed"; break;
-            case VK_PRESENT_MODE_FIFO_KHR: presentModeStr = "FIFO (VSync)"; break;
-            default: break;
-        }
-        std::string presentStr = std::string("Present: ") + presentModeStr;
-        canvas->drawString(presentStr.c_str(), 20, extent.height - 65, m_impl->smallFont, paint);
-        
-        canvas->drawString("Renderer: Skia Graphite", 20, extent.height - 45, m_impl->smallFont, paint);
-        canvas->drawString("Press ESC to exit", 20, extent.height - 25, m_impl->smallFont, paint);
-    } else {
-        // Fallback: try to draw without pre-loaded font (may not work)
-        SkFont fallbackFont;
-        fallbackFont.setSize(20);
-        // Show Vulkan version dynamically
-        std::string vulkanStr = std::string("Skia Graphite + ") + m_context->getCapabilities().getFeatureLevelString();
-        canvas->drawString(vulkanStr.c_str(), 20, 35, fallbackFont, paint);
-        std::string fpsStr = "FPS: " + std::to_string(static_cast<int>(m_fps));
-        canvas->drawString(fpsStr.c_str(), 20, 60, fallbackFont, paint);
-        fallbackFont.setSize(14);
-        paint.setColor(SkColorSetARGB(180, 200, 200, 200));
-        std::string modeStr = m_useOffscreenRendering ? "Mode: Offscreen + Blit" : "Mode: Direct Rendering";
-        canvas->drawString(modeStr.c_str(), 20, extent.height - 85, fallbackFont, paint);
-        
-        const char* presentModeStr = "Unknown";
-        VkPresentModeKHR presentMode = m_context->getSwapchain()->getPresentMode();
-        switch (presentMode) {
-            case VK_PRESENT_MODE_MAILBOX_KHR: presentModeStr = "Mailbox"; break;
-            case VK_PRESENT_MODE_IMMEDIATE_KHR: presentModeStr = "Immediate"; break;
-            case VK_PRESENT_MODE_FIFO_RELAXED_KHR: presentModeStr = "FIFO Relaxed"; break;
-            case VK_PRESENT_MODE_FIFO_KHR: presentModeStr = "FIFO (VSync)"; break;
-            default: break;
-        }
-        std::string presentStr = std::string("Present: ") + presentModeStr;
-        canvas->drawString(presentStr.c_str(), 20, extent.height - 65, fallbackFont, paint);
-        
-        canvas->drawString("Renderer: Skia Graphite", 20, extent.height - 45, fallbackFont, paint);
-        canvas->drawString("Press ESC to exit", 20, extent.height - 25, fallbackFont, paint);
+    // Build backend info string
+    std::string backendInfo = std::string("Vulkan ") + m_context->getCapabilities().getFeatureLevelString();
+    if (m_useOffscreenRendering) {
+        backendInfo += " (Offscreen)";
     }
+
+    // Use shared demo renderer
+    m_demoRenderer->render(canvas, extent.width, extent.height, backendInfo, "Skia Graphite Vulkan");
 
     // Snap recording
     auto recording = m_impl->recorder->snap();
