@@ -287,9 +287,7 @@ void Application::shutdown() {
 
 void Application::processEvents() {
     SDL_Event event;
-    int eventCount = 0;
     while (SDL_PollEvent(&event)) {
-        eventCount++;
         switch (event.type) {
             case SDL_EVENT_QUIT:
                 LOG_INFO("Received SDL_EVENT_QUIT");
@@ -304,7 +302,7 @@ void Application::processEvents() {
                 }
                 break;
                 
-            case SDL_EVENT_WINDOW_RESIZED:
+            case SDL_EVENT_WINDOW_RESIZED: {
                 int newWidth = event.window.data1;
                 int newHeight = event.window.data2;
                 LOG_DEBUG("Window resized to {}x{}", newWidth, newHeight);
@@ -322,6 +320,7 @@ void Application::processEvents() {
                 m_impl->width = newWidth;
                 m_impl->height = newHeight;
                 break;
+            }
                 
             case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                 LOG_INFO("Window close requested");
@@ -329,7 +328,6 @@ void Application::processEvents() {
                 break;
                 
             default:
-                // Log unknown events in first few frames
                 break;
         }
     }

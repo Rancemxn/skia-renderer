@@ -146,9 +146,8 @@ bool GLRenderer::createSurface() {
         return false;
     }
     
-    LOG_INFO("  Backend render target: {}x{}, samples={}, stencil={}",
-             backendRT.width(), backendRT.height(), 
-             backendRT.sampleCount(), backendRT.stencilBits());
+    LOG_INFO("  Backend render target: {}x{}, stencil={}",
+             backendRT.width(), backendRT.height(), backendRT.stencilBits());
 
     // Create Skia surface
     // OpenGL uses bottom-left origin
