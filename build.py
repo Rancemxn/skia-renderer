@@ -21,7 +21,31 @@ import subprocess
 import argparse
 import stat
 import platform
+import signal
 from pathlib import Path
+
+# Track running processes for cleanup on Ctrl+C
+_running_processes = []
+
+def _signal_handler(signum, frame):
+    """Handle Ctrl+C by terminating all child processes"""
+    print("\n\nInterrupted! Terminating build processes...")
+    for proc in _running_processes:
+        try:
+            if proc.poll() is None:  # Still running
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+        except Exception:
+            pass
+    sys.exit(1)
+
+# Register signal handler
+signal.signal(signal.SIGINT, _signal_handler)
+if platform.system() != "Windows":
+    signal.signal(signal.SIGTERM, _signal_handler)
 
 # ========================================
 # Tool Finding
@@ -116,16 +140,33 @@ def find_gn(depot_tools: Path) -> str:
 # ========================================
 
 def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) -> subprocess.CompletedProcess:
-    """Run a command"""
+    """Run a command with proper Ctrl+C handling"""
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
     
     print(f"  Running: {' '.join(str(c) for c in cmd)}")
-    result = subprocess.run(cmd, cwd=cwd, env=merged_env)
-    if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, cmd)
-    return result
+    
+    # Use Popen for better process control
+    proc = subprocess.Popen(
+        cmd, 
+        cwd=cwd, 
+        env=merged_env,
+        # On Windows, create new process group for clean termination
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
+    )
+    _running_processes.append(proc)
+    
+    try:
+        result = proc.wait()
+        _running_processes.remove(proc)
+        
+        if check and result != 0:
+            raise subprocess.CalledProcessError(result, cmd)
+        return subprocess.CompletedProcess(cmd, result)
+    except KeyboardInterrupt:
+        # Let signal handler deal with it
+        raise
 
 def remove_readonly(func, path, _):
     os.chmod(path, stat.S_IWRITE)
@@ -449,6 +490,10 @@ def build_main_project(script_dir: Path, build_type: str,
         f"-DSPDLOG_DIR={spdlog_dir}",
         f"-DCLI11_DIR={cli11_dir}"
     ])
+    
+    # Enable verbose CMake dependency output
+    if verbose:
+        cmd.append("-DVERBOSE_DEPS=ON")
     
     # Print CMake variables only in verbose mode
     if verbose:
