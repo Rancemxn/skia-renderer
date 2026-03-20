@@ -43,6 +43,42 @@ skia_renderer::VulkanVersionConfig parseVulkanVersion(const std::string& str) {
     return config;
 }
 
+// Helper to parse OpenGL version string (e.g., "3.3", "4.6", "4.1")
+struct GLVersion { int major; int minor; };
+GLVersion parseGLVersion(const std::string& str) {
+    GLVersion version{3, 3};  // Default to OpenGL 3.3
+    
+    // Find the dot separator
+    size_t dotPos = str.find('.');
+    if (dotPos != std::string::npos) {
+        try {
+            version.major = std::stoi(str.substr(0, dotPos));
+            version.minor = std::stoi(str.substr(dotPos + 1));
+        } catch (...) {
+            // Invalid format, use defaults
+            version.major = 3;
+            version.minor = 3;
+        }
+    } else {
+        // No dot, try to parse as single number (e.g., "4" -> 4.0)
+        try {
+            version.major = std::stoi(str);
+            version.minor = 0;
+        } catch (...) {
+            version.major = 3;
+            version.minor = 3;
+        }
+    }
+    
+    // Clamp to valid OpenGL versions (2.0 - 4.6)
+    if (version.major < 2) version.major = 2;
+    if (version.major > 4) version.major = 4;
+    if (version.major == 4 && version.minor > 6) version.minor = 6;
+    if (version.minor > 9) version.minor = 9;
+    
+    return version;
+}
+
 // Helper to parse backend string
 skia_renderer::BackendType parseBackend(const std::string& str) {
     std::string lower = str;
@@ -66,9 +102,8 @@ int main(int argc, char* argv[]) {
     bool verbose = false;
     bool show_version = false;
     std::string vulkanVersionStr = "1.3";
+    std::string glVersionStr = "3.3";
     std::string backendStr = "vulkan";
-    int glMajor = 3;
-    int glMinor = 3;
     
     app.add_option("-W,--width", width, "Window width")->check(CLI::Range(100, 7680));
     app.add_option("-H,--height", height, "Window height")->check(CLI::Range(100, 4320));
@@ -84,10 +119,8 @@ int main(int argc, char* argv[]) {
                    "Vulkan API version (e.g., 1.3, 1.2, 1.1). Auto-downgrades if not available.");
     
     // OpenGL-specific options
-    app.add_option("--gl-major", glMajor, 
-                   "OpenGL major version (default: 3)")->check(CLI::Range(2, 4));
-    app.add_option("--gl-minor", glMinor, 
-                   "OpenGL minor version (default: 3)")->check(CLI::Range(0, 9));
+    app.add_option("--gl-version", glVersionStr, 
+                   "OpenGL version (e.g., 3.3, 4.1, 4.6). Default: 3.3");
     
     // Parse command line
     try {
@@ -123,8 +156,9 @@ int main(int argc, char* argv[]) {
         backendConfig.vulkanMajor = vulkanVersion.major;
         backendConfig.vulkanMinor = vulkanVersion.minor;
     } else {
-        backendConfig.glMajor = glMajor;
-        backendConfig.glMinor = glMinor;
+        auto glVersion = parseGLVersion(glVersionStr);
+        backendConfig.glMajor = glVersion.major;
+        backendConfig.glMinor = glVersion.minor;
     }
     
     // ========================================
