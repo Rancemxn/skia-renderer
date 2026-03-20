@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IRenderer.h"
 #include <vulkan/vulkan.h>
 
 #include <memory>
@@ -8,10 +9,10 @@ namespace skia_renderer {
 
 class VulkanContext;
 
-class SkiaRenderer {
+class SkiaRenderer : public IRenderer {
 public:
     SkiaRenderer();
-    ~SkiaRenderer();
+    ~SkiaRenderer() override;
 
     // Delete copy and move
     SkiaRenderer(const SkiaRenderer&) = delete;
@@ -19,15 +20,20 @@ public:
     SkiaRenderer(SkiaRenderer&&) = delete;
     SkiaRenderer& operator=(SkiaRenderer&&) = delete;
 
+    // IRenderer interface implementation
+    bool initialize(SDL_Window* window, int width, int height, const BackendConfig& config) override;
+    void shutdown() override;
+    void resize(int width, int height) override;
+    void render() override;
+    void setFPS(float fps) override { m_fps = fps; }
+    BackendType getBackendType() const override { return BackendType::Vulkan; }
+    std::string getBackendName() const override { return "Graphite Vulkan"; }
+    bool isInitialized() const override { return m_initialized; }
+    bool beginFrame() override;
+    void endFrame() override;
+
+    // Vulkan-specific initialization (called by Application)
     bool initialize(VulkanContext* context, int width, int height);
-    void shutdown();
-    void resize(int width, int height);
-
-    // Render to current swapchain image
-    void render();
-
-    // Set FPS for display
-    void setFPS(float fps) { m_fps = fps; }
 
     // Get the render finished semaphore for the current image (for presentation)
     VkSemaphore getRenderFinishedSemaphore() const;

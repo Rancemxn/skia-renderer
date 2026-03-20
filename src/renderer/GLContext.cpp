@@ -1,7 +1,13 @@
+// Disable CRT secure warnings on MSVC/Clang-cl
+#if defined(_MSC_VER) || defined(__MINGW32__)
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "GLContext.h"
 #include "core/Logger.h"
 
 #include <SDL3/SDL_opengl.h>
+#include <cstdio>
 
 namespace skia_renderer {
 

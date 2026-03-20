@@ -25,10 +25,12 @@
 
 // Skia Ganesh (OpenGL) headers
 #include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
 
 // OpenGL headers
@@ -326,7 +328,7 @@ void GLRenderer::render() {
     };
     
     SkColor color1 = hsvToRgb(hue1, 0.3f, 0.15f);
-    SkColor color2 = hsvToRgb(hue2, 0.4f, 0.25f);
+    (void)hue2; // Reserved for future gradient use
     
     canvas->clear(color1);
 

@@ -1190,4 +1190,22 @@ VkSemaphore SkiaRenderer::getRenderFinishedSemaphore() const {
     return VK_NULL_HANDLE;
 }
 
+// IRenderer interface implementation (SDL_Window* version not used for Vulkan backend)
+bool SkiaRenderer::initialize(SDL_Window* window, int width, int height, const BackendConfig& config) {
+    (void)window;
+    (void)width;
+    (void)height;
+    (void)config;
+    LOG_ERROR("SkiaRenderer::initialize(SDL_Window*) not supported. Use initialize(VulkanContext*) instead.");
+    return false;
+}
+
+bool SkiaRenderer::beginFrame() {
+    return m_initialized;
+}
+
+void SkiaRenderer::endFrame() {
+    // Frame ending is handled internally by the Vulkan rendering flow
+}
+
 } // namespace skia_renderer
