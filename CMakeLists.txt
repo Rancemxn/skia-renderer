@@ -37,13 +37,17 @@ endif()
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/deps")
 
 # ========================================
-# Vulkan SDK
+# Vulkan SDK (optional - only for Vulkan backend)
 # ========================================
 if(DEFINED VULKAN_SDK AND NOT DEFINED Vulkan_SDK)
     set(Vulkan_SDK ${VULKAN_SDK})
 endif()
-find_package(Vulkan REQUIRED)
-message(STATUS "Vulkan SDK: ${Vulkan_SDK}")
+find_package(Vulkan QUIET)
+if(Vulkan_FOUND)
+    message(STATUS "Vulkan SDK: ${Vulkan_SDK}")
+else()
+    message(STATUS "Vulkan SDK: Not found (OpenGL backend only)")
+endif()
 
 # ========================================
 # SDL3
@@ -67,33 +71,39 @@ endif()
 message(STATUS "SDL3: ${SDL3_INCLUDE_DIRS}")
 
 # ========================================
-# vk-bootstrap (VkBootstrap.h)
+# vk-bootstrap (VkBootstrap.h) - only needed for Vulkan
 # ========================================
-if(USE_SYSTEM_VK_BOOTSTRAP)
-    find_package(vk-bootstrap REQUIRED)
-else()
-    # vk-bootstrap build output: deps/vk-bootstrap/out/{Debug,Release}/
-    set(VKB_OUT_DIR "${DEPS_DIR}/vk-bootstrap/out/${CMAKE_BUILD_TYPE}")
-    set(VKB_SOURCE "${DEPS_DIR}/vk-bootstrap")
-    
-    # Search paths
-    set(VKB_SEARCH_PATHS "${VKBOOTSTRAP_DIR}" "${VKB_OUT_DIR}" "${VKB_SOURCE}")
-    
-    find_path(VK_BOOTSTRAP_INCLUDE_DIR 
-        NAMES VkBootstrap.h 
-        HINTS ${VKB_SEARCH_PATHS}
-        PATH_SUFFIXES include)
-    
-    find_library(VK_BOOTSTRAP_LIBRARY 
-        NAMES vk-bootstrap vk-bootstrap-static 
-        HINTS ${VKB_SEARCH_PATHS}
-        PATH_SUFFIXES lib)
-endif()
+if(Vulkan_FOUND)
+    if(USE_SYSTEM_VK_BOOTSTRAP)
+        find_package(vk-bootstrap REQUIRED)
+    else()
+        # vk-bootstrap build output: deps/vk-bootstrap/out/{Debug,Release}/
+        set(VKB_OUT_DIR "${DEPS_DIR}/vk-bootstrap/out/${CMAKE_BUILD_TYPE}")
+        set(VKB_SOURCE "${DEPS_DIR}/vk-bootstrap")
+        
+        # Search paths
+        set(VKB_SEARCH_PATHS "${VKBOOTSTRAP_DIR}" "${VKB_OUT_DIR}" "${VKB_SOURCE}")
+        
+        find_path(VK_BOOTSTRAP_INCLUDE_DIR 
+            NAMES VkBootstrap.h 
+            HINTS ${VKB_SEARCH_PATHS}
+            PATH_SUFFIXES include)
+        
+        find_library(VK_BOOTSTRAP_LIBRARY 
+            NAMES vk-bootstrap vk-bootstrap-static 
+            HINTS ${VKB_SEARCH_PATHS}
+            PATH_SUFFIXES lib)
+    endif()
 
-if(NOT VK_BOOTSTRAP_INCLUDE_DIR OR NOT VK_BOOTSTRAP_LIBRARY)
-    message(FATAL_ERROR "vk-bootstrap not found. Run: python build.py")
+    if(VK_BOOTSTRAP_INCLUDE_DIR AND VK_BOOTSTRAP_LIBRARY)
+        message(STATUS "vk-bootstrap: ${VK_BOOTSTRAP_LIBRARY}")
+    else()
+        message(STATUS "vk-bootstrap: Not found (Vulkan backend disabled)")
+    endif()
+else()
+    set(VK_BOOTSTRAP_INCLUDE_DIR "")
+    set(VK_BOOTSTRAP_LIBRARY "")
 endif()
-message(STATUS "vk-bootstrap: ${VK_BOOTSTRAP_LIBRARY}")
 
 # ========================================
 # Skia
@@ -178,32 +188,54 @@ endif()
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/core/Application.cpp
-    src/renderer/VulkanContext.cpp
-    src/renderer/SkiaRenderer.cpp
-    src/renderer/Swapchain.cpp
+    src/renderer/GLContext.cpp
+    src/renderer/GLRenderer.cpp
+    src/renderer/RendererFactory.cpp
 )
+
+# Add Vulkan-specific files only if Vulkan is available
+if(Vulkan_FOUND AND VK_BOOTSTRAP_LIBRARY)
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/renderer/VulkanContext.cpp
+        src/renderer/SkiaRenderer.cpp
+        src/renderer/Swapchain.cpp
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE VULKAN_BACKEND_ENABLED=1)
+else()
+    message(WARNING "Vulkan not available - only OpenGL backend will be supported")
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
-    ${Vulkan_INCLUDE_DIRS}
     ${SDL3_INCLUDE_DIRS}
-    ${VK_BOOTSTRAP_INCLUDE_DIR}
     ${SKIA_INCLUDE_DIR}
     ${SPDLOG_INCLUDE_DIR}
     ${CLI11_INCLUDE_DIR}
 )
 
-# spdlog is used in header-only mode - no SPDLOG_COMPILED_LIB needed
+# Add Vulkan includes if available
+if(Vulkan_FOUND)
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        ${Vulkan_INCLUDE_DIRS}
+        ${VK_BOOTSTRAP_INCLUDE_DIR}
+    )
+endif()
 
 # ========================================
 # Link Libraries
 # ========================================
 set(LINK_LIBS
-    Vulkan::Vulkan
     SDL3::SDL3
-    ${VK_BOOTSTRAP_LIBRARY}
     ${SKIA_LIBRARY}
 )
+
+# Add Vulkan libraries if available
+if(Vulkan_FOUND AND VK_BOOTSTRAP_LIBRARY)
+    list(APPEND LINK_LIBS
+        Vulkan::Vulkan
+        ${VK_BOOTSTRAP_LIBRARY}
+    )
+endif()
 
 if(WIN32)
     list(APPEND LINK_LIBS
@@ -214,7 +246,12 @@ else()
     list(APPEND LINK_LIBS
         ZLIB::ZLIB PNG::PNG Freetype::Freetype Fontconfig::Fontconfig
         expat harfbuzz icuuc icui18n pthread dl m
+        ${CMAKE_DL_LIBS}  # For dlopen/dlsym on Linux
     )
+    
+    # Add OpenGL library on Linux
+    find_package(OpenGL REQUIRED)
+    list(APPEND LINK_LIBS OpenGL::GL)
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${LINK_LIBS})
@@ -224,9 +261,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE ${LINK_LIBS})
 # ========================================
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(${PROJECT_NAME} PRIVATE
-        DEBUG_BUILD ENABLE_VULKAN_VALIDATION SK_DEBUG
+        DEBUG_BUILD SK_DEBUG
     )
-    message(STATUS "Debug: Vulkan validation enabled")
+    if(Vulkan_FOUND)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_VULKAN_VALIDATION)
+        message(STATUS "Debug: Vulkan validation enabled")
+    endif()
 endif()
 
 # ========================================
@@ -288,5 +328,10 @@ message(STATUS "==== Configuration Summary ====")
 message(STATUS "Build Type:   ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Output:       ${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}")
+if(Vulkan_FOUND)
+    message(STATUS "Vulkan:       Available")
+else()
+    message(STATUS "Vulkan:       Not available (OpenGL only)")
+endif()
 message(STATUS "================================")
 message(STATUS "")

@@ -1,35 +1,66 @@
 #include "Application.h"
 #include "Logger.h"
+#include "renderer/GLRenderer.h"
+#include "renderer/RendererFactory.h"
+
+#ifdef VULKAN_BACKEND_ENABLED
 #include "renderer/VulkanContext.h"
 #include "renderer/SkiaRenderer.h"
 #include "renderer/Swapchain.h"
+#include <SDL3/SDL_vulkan.h>
+#endif
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
 
 #include <chrono>
 
 namespace skia_renderer {
 
+// VulkanVersionConfig implementation
+uint32_t VulkanVersionConfig::toVkVersion() const {
+#ifdef VULKAN_BACKEND_ENABLED
+    return VK_MAKE_API_VERSION(0, major, minor, 0);
+#else
+    return 0;
+#endif
+}
+
+VulkanVersionConfig VulkanVersionConfig::fromVkVersion(uint32_t version) {
+    VulkanVersionConfig cfg;
+#ifdef VULKAN_BACKEND_ENABLED
+    cfg.major = VK_API_VERSION_MAJOR(version);
+    cfg.minor = VK_API_VERSION_MINOR(version);
+#else
+    (void)version;
+#endif
+    return cfg;
+}
+
+std::string VulkanVersionConfig::toString() const {
+    return std::to_string(major) + "." + std::to_string(minor);
+}
+
 struct Application::Impl {
     SDL_Window* window = nullptr;
+#ifdef VULKAN_BACKEND_ENABLED
     std::unique_ptr<VulkanContext> vulkanContext;
-    std::unique_ptr<SkiaRenderer> skiaRenderer;
+#endif
+    std::unique_ptr<IRenderer> renderer;
     
     std::string title;
     int width;
     int height;
-    VulkanVersionConfig vulkanVersion;
+    BackendConfig backendConfig;
     bool running = false;
     bool initialized = false;
     
-    Impl(const std::string& t, int w, int h, const VulkanVersionConfig& v) 
-        : title(t), width(w), height(h), vulkanVersion(v) {}
+    Impl(const std::string& t, int w, int h, const BackendConfig& b) 
+        : title(t), width(w), height(h), backendConfig(b) {}
 };
 
 Application::Application(const std::string& title, int width, int height,
-                         const VulkanVersionConfig& vulkanVersion)
-    : m_impl(std::make_unique<Impl>(title, width, height, vulkanVersion)) {
+                         const BackendConfig& backendConfig)
+    : m_impl(std::make_unique<Impl>(title, width, height, backendConfig)) {
 }
 
 Application::~Application() {
@@ -45,12 +76,32 @@ bool Application::initialize() {
         return false;
     }
 
-    // Create window with Vulkan support
+    // Create window based on backend type
+    SDL_WindowFlags windowFlags = SDL_WINDOW_RESIZABLE;
+    
+#ifdef VULKAN_BACKEND_ENABLED
+    if (m_impl->backendConfig.type == BackendType::Vulkan) {
+        windowFlags = static_cast<SDL_WindowFlags>(windowFlags | SDL_WINDOW_VULKAN);
+        LOG_INFO("Creating window with Vulkan support");
+    } else {
+        windowFlags = static_cast<SDL_WindowFlags>(windowFlags | SDL_WINDOW_OPENGL);
+        LOG_INFO("Creating window with OpenGL support");
+    }
+#else
+    // Only OpenGL is available
+    if (m_impl->backendConfig.type == BackendType::Vulkan) {
+        LOG_WARN("Vulkan backend requested but not available, falling back to OpenGL");
+        m_impl->backendConfig.type = BackendType::OpenGL;
+    }
+    windowFlags = static_cast<SDL_WindowFlags>(windowFlags | SDL_WINDOW_OPENGL);
+    LOG_INFO("Creating window with OpenGL support");
+#endif
+
     m_impl->window = SDL_CreateWindow(
         m_impl->title.c_str(),
         m_impl->width,
         m_impl->height,
-        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
+        windowFlags
     );
 
     if (!m_impl->window) {
@@ -59,23 +110,23 @@ bool Application::initialize() {
         return false;
     }
 
-    // Initialize Vulkan context with requested version
-    m_impl->vulkanContext = std::make_unique<VulkanContext>();
-    if (!m_impl->vulkanContext->initialize(m_impl->window, m_impl->vulkanVersion)) {
-        LOG_ERROR("Failed to initialize Vulkan context");
-        SDL_DestroyWindow(m_impl->window);
-        SDL_Quit();
-        return false;
+    // Initialize the appropriate backend
+    bool success = false;
+    switch (m_impl->backendConfig.type) {
+        case BackendType::Vulkan:
+#ifdef VULKAN_BACKEND_ENABLED
+            success = initializeVulkanBackend();
+#else
+            LOG_ERROR("Vulkan backend not available");
+            success = false;
+#endif
+            break;
+        case BackendType::OpenGL:
+            success = initializeOpenGLBackend();
+            break;
     }
 
-    // Initialize Skia renderer
-    m_impl->skiaRenderer = std::make_unique<SkiaRenderer>();
-    if (!m_impl->skiaRenderer->initialize(
-        m_impl->vulkanContext.get(),
-        m_impl->width,
-        m_impl->height)) {
-        LOG_ERROR("Failed to initialize Skia renderer");
-        m_impl->vulkanContext->shutdown();
+    if (!success) {
         SDL_DestroyWindow(m_impl->window);
         SDL_Quit();
         return false;
@@ -86,8 +137,70 @@ bool Application::initialize() {
     
     LOG_INFO("Application initialized successfully!");
     LOG_INFO("  Window: {}x{}", m_impl->width, m_impl->height);
+    LOG_INFO("  Backend: {}", m_impl->backendConfig.toString());
+    
+    return true;
+}
+
+#ifdef VULKAN_BACKEND_ENABLED
+bool Application::initializeVulkanBackend() {
+    LOG_INFO("Initializing Vulkan backend...");
+    
+    // Create Vulkan context
+    VulkanVersionConfig vulkanVersion;
+    vulkanVersion.major = m_impl->backendConfig.vulkanMajor;
+    vulkanVersion.minor = m_impl->backendConfig.vulkanMinor;
+    
+    m_impl->vulkanContext = std::make_unique<VulkanContext>();
+    if (!m_impl->vulkanContext->initialize(m_impl->window, vulkanVersion)) {
+        LOG_ERROR("Failed to initialize Vulkan context");
+        return false;
+    }
+
+    // Create renderer using factory
+    m_impl->renderer = RendererFactory::create(BackendType::Vulkan);
+    
+    // For Vulkan renderer, we need to pass VulkanContext
+    auto* vulkanRenderer = dynamic_cast<SkiaRenderer*>(m_impl->renderer.get());
+    if (!vulkanRenderer) {
+        LOG_ERROR("Failed to cast to Vulkan renderer");
+        return false;
+    }
+    
+    if (!vulkanRenderer->initialize(
+        m_impl->vulkanContext.get(),
+        m_impl->width,
+        m_impl->height)) {
+        LOG_ERROR("Failed to initialize Vulkan renderer");
+        return false;
+    }
+    
     LOG_INFO("  GPU: {}", m_impl->vulkanContext->getDeviceName());
     LOG_INFO("  Vulkan: {}", m_impl->vulkanContext->getCapabilities().getFeatureLevelString());
+    
+    return true;
+}
+#else
+bool Application::initializeVulkanBackend() {
+    LOG_ERROR("Vulkan backend not available");
+    return false;
+}
+#endif
+
+bool Application::initializeOpenGLBackend() {
+    LOG_INFO("Initializing OpenGL backend...");
+    
+    // Create renderer using factory
+    m_impl->renderer = RendererFactory::create(BackendType::OpenGL);
+    
+    if (!m_impl->renderer->initialize(
+        m_impl->window,
+        m_impl->width,
+        m_impl->height,
+        m_impl->backendConfig)) {
+        LOG_ERROR("Failed to initialize OpenGL renderer");
+        return false;
+    }
     
     return true;
 }
@@ -114,7 +227,7 @@ void Application::run() {
         fpsTimer += deltaTime;
         if (fpsTimer >= 0.5f) {  // Update FPS every 0.5 seconds
             currentFPS = frameCount / fpsTimer;
-            m_impl->skiaRenderer->setFPS(currentFPS);
+            m_impl->renderer->setFPS(currentFPS);
             frameCount = 0;
             fpsTimer = 0.0f;
         }
@@ -135,16 +248,20 @@ void Application::shutdown() {
 
     m_impl->running = false;
 
+#ifdef VULKAN_BACKEND_ENABLED
     // Wait for GPU to finish
     if (m_impl->vulkanContext) {
         m_impl->vulkanContext->waitIdle();
     }
+#endif
 
-    // Cleanup Skia first (depends on Vulkan)
-    m_impl->skiaRenderer.reset();
+    // Cleanup renderer first
+    m_impl->renderer.reset();
 
-    // Cleanup Vulkan
+#ifdef VULKAN_BACKEND_ENABLED
+    // Cleanup Vulkan if used
     m_impl->vulkanContext.reset();
+#endif
 
     // Cleanup SDL
     if (m_impl->window) {
@@ -175,11 +292,15 @@ void Application::processEvents() {
                 int newWidth = event.window.data1;
                 int newHeight = event.window.data2;
                 
-                m_impl->vulkanContext->waitIdle();
+#ifdef VULKAN_BACKEND_ENABLED
+                // Wait for GPU if using Vulkan
+                if (m_impl->vulkanContext) {
+                    m_impl->vulkanContext->waitIdle();
+                    m_impl->vulkanContext->resize(newWidth, newHeight);
+                }
+#endif
                 
-                // Recreate swapchain and Skia surface
-                m_impl->vulkanContext->resize(newWidth, newHeight);
-                m_impl->skiaRenderer->resize(newWidth, newHeight);
+                m_impl->renderer->resize(newWidth, newHeight);
                 
                 m_impl->width = newWidth;
                 m_impl->height = newHeight;
@@ -194,16 +315,35 @@ void Application::update(float deltaTime) {
 }
 
 void Application::render() {
-    // Begin frame - acquire swapchain image
-    if (!m_impl->vulkanContext->beginFrame()) {
+    // Begin frame
+    if (!m_impl->renderer->beginFrame()) {
         return;
     }
 
-    // Let Skia Graphite render to the swapchain image
-    m_impl->skiaRenderer->render();
+#ifdef VULKAN_BACKEND_ENABLED
+    // For Vulkan backend, we need to acquire swapchain image first
+    if (m_impl->backendConfig.type == BackendType::Vulkan && m_impl->vulkanContext) {
+        if (!m_impl->vulkanContext->beginFrame()) {
+            return;
+        }
+    }
+#endif
 
-    // End frame - present swapchain image with Skia's semaphore
-    m_impl->vulkanContext->endFrame(m_impl->skiaRenderer->getRenderFinishedSemaphore());
+    // Render
+    m_impl->renderer->render();
+
+#ifdef VULKAN_BACKEND_ENABLED
+    // End frame
+    if (m_impl->backendConfig.type == BackendType::Vulkan && m_impl->vulkanContext) {
+        // For Vulkan, we need to get the semaphore and present
+        auto* vulkanRenderer = dynamic_cast<SkiaRenderer*>(m_impl->renderer.get());
+        if (vulkanRenderer) {
+            m_impl->vulkanContext->endFrame(vulkanRenderer->getRenderFinishedSemaphore());
+        }
+    }
+#endif
+    
+    m_impl->renderer->endFrame();
 }
 
 } // namespace skia_renderer
