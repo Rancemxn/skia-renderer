@@ -188,7 +188,7 @@ endif()
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/core/Application.cpp
-    src/renderer/DemoRenderer.cpp
+    src/renderer/SceneRenderer.cpp
     src/renderer/GLContext.cpp
     src/renderer/GLRenderer.cpp
     src/renderer/RendererFactory.cpp

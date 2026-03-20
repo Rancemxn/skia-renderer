@@ -1,6 +1,6 @@
 #include "GLRenderer.h"
 #include "GLContext.h"
-#include "DemoRenderer.h"
+#include "SceneRenderer.h"
 #include "core/Logger.h"
 
 // Skia Ganesh (OpenGL) headers
@@ -27,7 +27,7 @@ struct GLRenderer::Impl {
 
 GLRenderer::GLRenderer() 
     : m_impl(std::make_unique<Impl>())
-    , m_demoRenderer(std::make_unique<DemoRenderer>()) {
+    , m_sceneRenderer(std::make_unique<SceneRenderer>()) {
 }
 
 GLRenderer::~GLRenderer() {
@@ -60,9 +60,9 @@ bool GLRenderer::initialize(SDL_Window* window, int width, int height, const Bac
         return false;
     }
 
-    // Initialize demo renderer fonts
-    if (!m_demoRenderer->initializeFonts()) {
-        LOG_WARN("Failed to initialize fonts for demo renderer");
+    // Initialize scene renderer fonts
+    if (!m_sceneRenderer->initializeFonts()) {
+        LOG_WARN("Failed to initialize fonts for scene renderer");
     }
 
     m_initialized = true;
@@ -243,14 +243,14 @@ void GLRenderer::render() {
         return;
     }
 
-    // Update demo renderer state
-    m_demoRenderer->setFPS(m_fps);
+    // Update scene renderer state
+    m_sceneRenderer->setFPS(m_fps);
 
     // Build backend info string
     std::string backendInfo = m_glContext->getGLRendererString();
 
-    // Use shared demo renderer
-    m_demoRenderer->render(canvas, m_width, m_height, backendInfo, "Skia Ganesh OpenGL");
+    // Use shared scene renderer
+    m_sceneRenderer->render(canvas, m_width, m_height, backendInfo, "Skia Ganesh OpenGL");
     
     // Flush after each render call
     m_impl->grContext->flush();

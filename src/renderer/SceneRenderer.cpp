@@ -1,4 +1,4 @@
-#include "DemoRenderer.h"
+#include "SceneRenderer.h"
 #include "core/Logger.h"
 
 #include "include/core/SkPaint.h"
@@ -19,13 +19,13 @@
 
 namespace skia_renderer {
 
-DemoRenderer::DemoRenderer()
+SceneRenderer::SceneRenderer()
     : m_startTime(std::chrono::high_resolution_clock::now()) {
 }
 
-DemoRenderer::~DemoRenderer() = default;
+SceneRenderer::~SceneRenderer() = default;
 
-bool DemoRenderer::initializeFonts() {
+bool SceneRenderer::initializeFonts() {
     LOG_INFO("  Initializing font manager...");
     
 #if defined(_WIN32)
@@ -55,7 +55,13 @@ bool DemoRenderer::initializeFonts() {
 
     if (m_defaultTypeface) {
         LOG_INFO("  Font typeface loaded successfully");
-        m_defaultFont = SkFont(m_defaultTypeface, 20.0f);
+        
+        m_titleFont = SkFont(m_defaultTypeface, 24.0f);
+        m_titleFont.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        m_titleFont.setSubpixel(true);
+        m_titleFont.setHinting(SkFontHinting::kSlight);
+
+        m_defaultFont = SkFont(m_defaultTypeface, 18.0f);
         m_defaultFont.setEdging(SkFont::Edging::kSubpixelAntiAlias);
         m_defaultFont.setSubpixel(true);
         m_defaultFont.setHinting(SkFontHinting::kSlight);
@@ -73,8 +79,8 @@ bool DemoRenderer::initializeFonts() {
     return m_fontsInitialized;
 }
 
-void DemoRenderer::render(SkCanvas* canvas, int width, int height,
-                          const std::string& backendInfo, const std::string& rendererName) {
+void SceneRenderer::render(SkCanvas* canvas, int width, int height,
+                           const std::string& backendInfo, const std::string& rendererName) {
     if (!canvas) {
         return;
     }
@@ -91,9 +97,9 @@ void DemoRenderer::render(SkCanvas* canvas, int width, int height,
     drawText(canvas, width, height, time, backendInfo, rendererName);
 }
 
-void DemoRenderer::drawBackground(SkCanvas* canvas, int width, int height, float time) {
+void SceneRenderer::drawBackground(SkCanvas* canvas, int width, int height, float time) {
     // Animated gradient background
-    float hue1 = fmodf(time * 30.0f, 360.0f);
+    float hue1 = fmodf(time * 20.0f, 360.0f);
     
     // HSV to RGB conversion
     auto hsvToRgb = [](float h, float s, float v) -> SkColor {
@@ -116,13 +122,13 @@ void DemoRenderer::drawBackground(SkCanvas* canvas, int width, int height, float
     };
     
     // Dark gradient background with subtle animation
-    SkColor bgColor = hsvToRgb(hue1, 0.3f, 0.12f);
+    SkColor bgColor = hsvToRgb(hue1, 0.25f, 0.10f);
     canvas->clear(bgColor);
 
     // Draw subtle grid pattern
     SkPaint gridPaint;
     gridPaint.setAntiAlias(true);
-    gridPaint.setColor(SkColorSetARGB(30, 255, 255, 255));
+    gridPaint.setColor(SkColorSetARGB(20, 255, 255, 255));
     gridPaint.setStrokeWidth(1.0f);
     gridPaint.setStyle(SkPaint::kStroke_Style);
 
@@ -135,7 +141,7 @@ void DemoRenderer::drawBackground(SkCanvas* canvas, int width, int height, float
     }
 }
 
-void DemoRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, float time) {
+void SceneRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, float time) {
     // HSV to RGB conversion
     auto hsvToRgb = [](float h, float s, float v) -> SkColor {
         float c = v * s;
@@ -156,8 +162,12 @@ void DemoRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, f
             static_cast<uint8_t>((b + m) * 255));
     };
 
-    float hue1 = fmodf(time * 30.0f, 360.0f);
-    float centerX = width / 2.0f;
+    float hue1 = fmodf(time * 20.0f, 360.0f);
+    
+    // Shift shapes to the right side (leaving left side for text)
+    float shapeAreaX = width * 0.35f;  // Start X for shapes area
+    float shapeAreaWidth = width * 0.60f;  // Width of shapes area
+    float centerX = shapeAreaX + shapeAreaWidth / 2.0f;
     float centerY = height / 2.0f;
 
     // Draw rotating rectangle
@@ -165,7 +175,7 @@ void DemoRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, f
     paint.setColor(SkColorSetARGB(255, 100, 180, 255));
     paint.setAntiAlias(true);
 
-    float size = std::min(static_cast<float>(width), static_cast<float>(height)) * 0.15f;
+    float size = std::min(shapeAreaWidth, static_cast<float>(height)) * 0.15f;
 
     canvas->save();
     canvas->translate(centerX, centerY);
@@ -185,11 +195,11 @@ void DemoRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, f
         paint
     );
 
-    // Draw animated rectangles
+    // Draw animated rectangles - shifted to right
     int rectCount = 8;
     for (int i = 0; i < rectCount; i++) {
         float phase = time * 1.5f + i * 0.5f;
-        float x = width * 0.1f + (width * 0.8f * (i / (float)rectCount));
+        float x = shapeAreaX + shapeAreaWidth * 0.1f + (shapeAreaWidth * 0.8f * (i / (float)rectCount));
         float y = height * 0.3f + sinf(phase) * (height * 0.15f);
         float rectWidth = 40 + cosf(phase * 0.7f) * 20;
         float rectHeight = 40 + cosf(phase * 0.5f) * 20;
@@ -206,15 +216,15 @@ void DemoRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, f
         canvas->drawRoundRect(shapeRect, radius, radius, rectPaint);
     }
 
-    // Draw animated circles
+    // Draw animated circles - centered on right side
     int circleCount = 6;
     for (int i = 0; i < circleCount; i++) {
         float angle = time + i * (3.14159f * 2 / circleCount);
-        float radius = 150.0f + i * 30.0f;
+        float radius = 120.0f + i * 25.0f;
         
         float x = centerX + cosf(angle) * radius;
         float y = centerY + sinf(angle) * radius;
-        float circleSize = 15 + i * 5;
+        float circleSize = 12 + i * 4;
         
         SkPaint circlePaint;
         circlePaint.setAntiAlias(true);
@@ -225,103 +235,70 @@ void DemoRenderer::drawAnimatedShapes(SkCanvas* canvas, int width, int height, f
     }
 }
 
-void DemoRenderer::drawText(SkCanvas* canvas, int width, int height, float time,
-                            const std::string& backendInfo, const std::string& rendererName) {
-    (void)time; // Reserved for future animations
+void SceneRenderer::drawText(SkCanvas* canvas, int width, int height, float time,
+                             const std::string& backendInfo, const std::string& rendererName) {
+    (void)time;
+    (void)width;
     
-    // Draw text
+    // Text position - left upper corner with margin
+    float marginX = 25.0f;
+    float startY = 40.0f;
+    float lineHeight = 28.0f;
+    float smallLineHeight = 22.0f;
+
     SkPaint textPaint;
     textPaint.setColor(SK_ColorWHITE);
     textPaint.setAntiAlias(true);
 
     if (m_fontsInitialized) {
-        // Draw title
-        std::string title = rendererName;
-        SkRect bounds;
-        m_defaultFont.measureText(title.c_str(), title.length(), SkTextEncoding::kUTF8, &bounds);
-        float textX = (width - bounds.width()) / 2.0f;
-        float textY = height / 2.0f - 60;
-        
-        // Shadow
+        // Draw title (renderer name)
         SkPaint shadowPaint;
         shadowPaint.setAntiAlias(true);
-        shadowPaint.setColor(SkColorSetARGB(128, 0, 0, 0));
-        canvas->drawSimpleText(title.c_str(), title.length(), SkTextEncoding::kUTF8,
-                               textX + 2, textY + 2, m_defaultFont, shadowPaint);
+        shadowPaint.setColor(SkColorSetARGB(100, 0, 0, 0));
         
-        // Main text
-        canvas->drawSimpleText(title.c_str(), title.length(), SkTextEncoding::kUTF8,
-                               textX, textY, m_defaultFont, textPaint);
+        // Shadow
+        canvas->drawSimpleText(rendererName.c_str(), rendererName.length(), SkTextEncoding::kUTF8,
+                               marginX + 2, startY + 2, m_titleFont, shadowPaint);
         
-        // Draw FPS and frame info
-        char infoText[256];
-        snprintf(infoText, sizeof(infoText), "FPS: %.1f | Frame: %lu | %dx%d",
-                 m_fps, static_cast<unsigned long>(m_frameCount), width, height);
-        
-        bounds = SkRect();
-        m_smallFont.measureText(infoText, strlen(infoText), SkTextEncoding::kUTF8, &bounds);
-        float infoX = (width - bounds.width()) / 2.0f;
-        float infoY = textY + 35;
-        
-        canvas->drawSimpleText(infoText, strlen(infoText), SkTextEncoding::kUTF8,
-                               infoX, infoY, m_smallFont, textPaint);
+        // Main title
+        canvas->drawSimpleText(rendererName.c_str(), rendererName.length(), SkTextEncoding::kUTF8,
+                               marginX, startY, m_titleFont, textPaint);
         
         // Draw backend info
-        char backendText[256];
-        snprintf(backendText, sizeof(backendText), "Backend: %s",
-                 backendInfo.c_str());
+        float y = startY + lineHeight + 5;
+        canvas->drawSimpleText(backendInfo.c_str(), backendInfo.length(), SkTextEncoding::kUTF8,
+                               marginX, y, m_defaultFont, textPaint);
         
-        bounds = SkRect();
-        m_smallFont.measureText(backendText, strlen(backendText), SkTextEncoding::kUTF8, &bounds);
-        float backendX = (width - bounds.width()) / 2.0f;
-        float backendY = infoY + 25;
+        // Draw FPS and frame info
+        y += smallLineHeight;
+        char infoText[256];
+        snprintf(infoText, sizeof(infoText), "FPS: %.1f | Frame: %lu",
+                 m_fps, static_cast<unsigned long>(m_frameCount));
+        canvas->drawSimpleText(infoText, strlen(infoText), SkTextEncoding::kUTF8,
+                               marginX, y, m_smallFont, textPaint);
         
-        canvas->drawSimpleText(backendText, strlen(backendText), SkTextEncoding::kUTF8,
-                               backendX, backendY, m_smallFont, textPaint);
+        // Draw resolution
+        y += smallLineHeight;
+        snprintf(infoText, sizeof(infoText), "Resolution: %dx%d", width, height);
+        canvas->drawSimpleText(infoText, strlen(infoText), SkTextEncoding::kUTF8,
+                               marginX, y, m_smallFont, textPaint);
 
-        // Draw instructions
-        textPaint.setColor(SkColorSetARGB(180, 200, 200, 200));
-        canvas->drawString("Press ESC to exit", 20, height - 25, m_smallFont, textPaint);
-        canvas->drawString("Press V to switch backend", 20, height - 45, m_smallFont, textPaint);
+        // Draw instructions at bottom left
+        textPaint.setColor(SkColorSetARGB(150, 200, 200, 200));
+        canvas->drawString("Press ESC to exit", marginX, height - 45, m_smallFont, textPaint);
+        canvas->drawString("Run with --help for options", marginX, height - 25, m_smallFont, textPaint);
         
     } else {
         // Fallback: try to draw without pre-loaded font
         SkFont fallbackFont;
         fallbackFont.setSize(20);
         
-        std::string title = rendererName;
-        SkRect bounds;
-        fallbackFont.measureText(title.c_str(), title.length(), SkTextEncoding::kUTF8, &bounds);
-        float textX = (width - bounds.width()) / 2.0f;
-        float textY = height / 2.0f - 60;
+        canvas->drawSimpleText(rendererName.c_str(), rendererName.length(), SkTextEncoding::kUTF8,
+                               marginX, startY, fallbackFont, textPaint);
         
-        canvas->drawSimpleText(title.c_str(), title.length(), SkTextEncoding::kUTF8,
-                               textX, textY, fallbackFont, textPaint);
-        
-        char infoText[256];
-        snprintf(infoText, sizeof(infoText), "FPS: %.1f | Frame: %lu | %dx%d",
-                 m_fps, static_cast<unsigned long>(m_frameCount), width, height);
-        
-        fallbackFont.setSize(14);
-        bounds = SkRect();
-        fallbackFont.measureText(infoText, strlen(infoText), SkTextEncoding::kUTF8, &bounds);
-        float infoX = (width - bounds.width()) / 2.0f;
-        float infoY = textY + 35;
-        
-        canvas->drawSimpleText(infoText, strlen(infoText), SkTextEncoding::kUTF8,
-                               infoX, infoY, fallbackFont, textPaint);
-
-        char backendText[256];
-        snprintf(backendText, sizeof(backendText), "Backend: %s",
-                 backendInfo.c_str());
-        
-        bounds = SkRect();
-        fallbackFont.measureText(backendText, strlen(backendText), SkTextEncoding::kUTF8, &bounds);
-        float backendX = (width - bounds.width()) / 2.0f;
-        float backendY = infoY + 25;
-        
-        canvas->drawSimpleText(backendText, strlen(backendText), SkTextEncoding::kUTF8,
-                               backendX, backendY, fallbackFont, textPaint);
+        fallbackFont.setSize(16);
+        canvas->drawSimpleText(backendInfo.c_str(), backendInfo.length(), SkTextEncoding::kUTF8,
+                               marginX, startY + lineHeight, fallbackFont, textPaint);
     }
 }
 

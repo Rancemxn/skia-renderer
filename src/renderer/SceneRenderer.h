@@ -12,22 +12,22 @@
 namespace skia_renderer {
 
 /**
- * @brief Shared demo rendering component
+ * @brief Scene rendering component
  * 
- * This class provides a common rendering implementation that can be used
+ * This class provides the main rendering implementation that can be used
  * by both Vulkan (Graphite) and OpenGL (Ganesh) backends to ensure
  * consistent visual output across different rendering APIs.
  */
-class DemoRenderer {
+class SceneRenderer {
 public:
-    DemoRenderer();
-    ~DemoRenderer();
+    SceneRenderer();
+    ~SceneRenderer();
 
     // Initialize fonts (call once after Skia context is ready)
     bool initializeFonts();
 
     /**
-     * @brief Render a demo frame to the canvas
+     * @brief Render a frame to the canvas
      * @param canvas The Skia canvas to render to
      * @param width Canvas width
      * @param height Canvas height
@@ -63,6 +63,7 @@ private:
     // Font management
     sk_sp<SkFontMgr> m_fontMgr;
     sk_sp<SkTypeface> m_defaultTypeface;
+    SkFont m_titleFont;
     SkFont m_defaultFont;
     SkFont m_smallFont;
     bool m_fontsInitialized = false;

@@ -8,7 +8,7 @@
 namespace skia_renderer {
 
 class VulkanContext;
-class DemoRenderer;
+class SceneRenderer;
 
 class SkiaRenderer : public IRenderer {
 public:
@@ -61,7 +61,7 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
-    std::unique_ptr<DemoRenderer> m_demoRenderer;
+    std::unique_ptr<SceneRenderer> m_sceneRenderer;
 
     int m_width = 0;
     int m_height = 0;

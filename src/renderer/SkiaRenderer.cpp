@@ -1,7 +1,7 @@
 #include "SkiaRenderer.h"
 #include "VulkanContext.h"
 #include "Swapchain.h"
-#include "DemoRenderer.h"
+#include "SceneRenderer.h"
 #include "core/Logger.h"
 
 // Skia core headers
@@ -92,7 +92,7 @@ struct SkiaRenderer::Impl {
 
 SkiaRenderer::SkiaRenderer() 
     : m_impl(std::make_unique<Impl>())
-    , m_demoRenderer(std::make_unique<DemoRenderer>()) {
+    , m_sceneRenderer(std::make_unique<SceneRenderer>()) {
 }
 
 SkiaRenderer::~SkiaRenderer() {
@@ -238,9 +238,9 @@ bool SkiaRenderer::createSkiaContext() {
 
     LOG_INFO("  Creating Skia Graphite context...");
 
-    // Initialize fonts using shared demo renderer
-    if (!m_demoRenderer->initializeFonts()) {
-        LOG_WARN("  Failed to initialize fonts for demo renderer");
+    // Initialize fonts using shared scene renderer
+    if (!m_sceneRenderer->initializeFonts()) {
+        LOG_WARN("  Failed to initialize fonts for scene renderer");
     }
 
     vkGetPhysicalDeviceFeatures(
@@ -983,8 +983,8 @@ void SkiaRenderer::render() {
         return;
     }
 
-    // Update demo renderer state
-    m_demoRenderer->setFPS(m_fps);
+    // Update scene renderer state
+    m_sceneRenderer->setFPS(m_fps);
 
     // Build backend info string
     std::string backendInfo = std::string("Vulkan ") + m_context->getCapabilities().getFeatureLevelString();
@@ -992,8 +992,8 @@ void SkiaRenderer::render() {
         backendInfo += " (Offscreen)";
     }
 
-    // Use shared demo renderer
-    m_demoRenderer->render(canvas, extent.width, extent.height, backendInfo, "Skia Graphite Vulkan");
+    // Use shared scene renderer
+    m_sceneRenderer->render(canvas, extent.width, extent.height, backendInfo, "Skia Graphite Vulkan");
 
     // Snap recording
     auto recording = m_impl->recorder->snap();
