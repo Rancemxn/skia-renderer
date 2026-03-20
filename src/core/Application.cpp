@@ -211,10 +211,15 @@ void Application::run() {
         return;
     }
 
+    LOG_INFO("Entering main render loop...");
+    LOG_INFO("  Running flag: {}", m_impl->running);
+    LOG_INFO("  Backend type: {}", m_impl->backendConfig.toString());
+
     auto lastTime = std::chrono::high_resolution_clock::now();
     int frameCount = 0;
     float fpsTimer = 0.0f;
     float currentFPS = 0.0f;
+    int totalFrames = 0;
 
     while (m_impl->running) {
         // Calculate delta time
@@ -228,6 +233,9 @@ void Application::run() {
         if (fpsTimer >= 0.5f) {  // Update FPS every 0.5 seconds
             currentFPS = frameCount / fpsTimer;
             m_impl->renderer->setFPS(currentFPS);
+            if (totalFrames < 10 || totalFrames % 100 == 0) {
+                LOG_INFO("  Frame {}, FPS: {:.1f}", totalFrames, currentFPS);
+            }
             frameCount = 0;
             fpsTimer = 0.0f;
         }
@@ -235,10 +243,13 @@ void Application::run() {
         processEvents();
         update(deltaTime);
         render();
+        totalFrames++;
 
         // Cap frame rate
         SDL_Delay(1);
     }
+    
+    LOG_INFO("Exited render loop after {} frames", totalFrames);
 }
 
 void Application::shutdown() {
@@ -276,14 +287,19 @@ void Application::shutdown() {
 
 void Application::processEvents() {
     SDL_Event event;
+    int eventCount = 0;
     while (SDL_PollEvent(&event)) {
+        eventCount++;
         switch (event.type) {
             case SDL_EVENT_QUIT:
+                LOG_INFO("Received SDL_EVENT_QUIT");
                 m_impl->running = false;
                 break;
                 
             case SDL_EVENT_KEY_DOWN:
+                LOG_DEBUG("Key pressed: {}", static_cast<int>(event.key.key));
                 if (event.key.key == SDLK_ESCAPE) {
+                    LOG_INFO("ESC pressed, exiting");
                     m_impl->running = false;
                 }
                 break;
@@ -291,6 +307,7 @@ void Application::processEvents() {
             case SDL_EVENT_WINDOW_RESIZED:
                 int newWidth = event.window.data1;
                 int newHeight = event.window.data2;
+                LOG_DEBUG("Window resized to {}x{}", newWidth, newHeight);
                 
 #ifdef VULKAN_BACKEND_ENABLED
                 // Wait for GPU if using Vulkan
@@ -305,6 +322,15 @@ void Application::processEvents() {
                 m_impl->width = newWidth;
                 m_impl->height = newHeight;
                 break;
+                
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                LOG_INFO("Window close requested");
+                m_impl->running = false;
+                break;
+                
+            default:
+                // Log unknown events in first few frames
+                break;
         }
     }
 }
@@ -317,6 +343,7 @@ void Application::update(float deltaTime) {
 void Application::render() {
     // Begin frame
     if (!m_impl->renderer->beginFrame()) {
+        LOG_WARN("beginFrame returned false");
         return;
     }
 

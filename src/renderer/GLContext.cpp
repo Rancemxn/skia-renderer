@@ -128,11 +128,12 @@ bool GLContext::initialize(SDL_Window* window, int majorVersion, int minorVersio
         return false;
     }
 
+    // Set initialized BEFORE logging so getGLVendorString/getGLRendererString work correctly
+    m_initialized = true;
+
     // Log OpenGL info
     LOG_INFO("  OpenGL Vendor: {}", getGLVendorString());
     LOG_INFO("  OpenGL Renderer: {}", getGLRendererString());
-
-    m_initialized = true;
     LOG_INFO("OpenGL context initialized ({}x{})", m_width, m_height);
     return true;
 }

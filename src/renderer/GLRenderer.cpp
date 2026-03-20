@@ -111,16 +111,28 @@ bool GLRenderer::createSurface() {
         return false;
     }
 
+    // Make sure GL context is current
+    m_glContext->makeCurrent();
+
     // Get the default framebuffer (0 = window framebuffer)
     GLint framebuffer = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
 
     LOG_INFO("  Creating Skia surface (FBO: {}, {}x{})...", framebuffer, m_width, m_height);
+    
+    // Verify framebuffer is valid
+    if (framebuffer < 0) {
+        LOG_ERROR("  Invalid framebuffer ID: {}", framebuffer);
+        return false;
+    }
 
     // Create backend render target wrapping the default framebuffer
     GrGLFramebufferInfo fbInfo;
     fbInfo.fFBOID = static_cast<GrGLuint>(framebuffer);
     fbInfo.fFormat = GL_RGBA8;
+
+    // Log actual framebuffer info
+    LOG_INFO("  FBO info: ID={}, Format=GL_RGBA8", fbInfo.fFBOID);
 
     GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeGL(
         m_width, m_height,
@@ -133,6 +145,10 @@ bool GLRenderer::createSurface() {
         LOG_ERROR("  Failed to create backend render target");
         return false;
     }
+    
+    LOG_INFO("  Backend render target: {}x{}, samples={}, stencil={}",
+             backendRT.width(), backendRT.height(), 
+             backendRT.sampleCount(), backendRT.stencilBits());
 
     // Create Skia surface
     // OpenGL uses bottom-left origin
@@ -152,6 +168,17 @@ bool GLRenderer::createSurface() {
     }
 
     LOG_INFO("  Skia surface created successfully");
+    
+    // Verify we can get a canvas
+    SkCanvas* canvas = m_impl->surface->getCanvas();
+    if (!canvas) {
+        LOG_ERROR("  Failed to get canvas from surface");
+        return false;
+    }
+    
+    LOG_INFO("  Canvas obtained successfully, imageInfo: {}x{}",
+             m_impl->surface->width(), m_impl->surface->height());
+    
     return true;
 }
 
@@ -196,16 +223,40 @@ void GLRenderer::resize(int width, int height) {
 }
 
 bool GLRenderer::beginFrame() {
-    return m_initialized;
+    if (!m_initialized) {
+        LOG_ERROR("GLRenderer::beginFrame called but not initialized");
+        return false;
+    }
+    
+    // Ensure OpenGL context is current before rendering
+    m_glContext->makeCurrent();
+    
+    // Set viewport to match the current window size
+    glViewport(0, 0, m_width, m_height);
+    
+    // Verify OpenGL state
+    GLenum glError = glGetError();
+    if (glError != GL_NO_ERROR) {
+        LOG_WARN("GLRenderer::beginFrame - GL error before render: {}", glError);
+    }
+    
+    return true;
 }
 
 void GLRenderer::endFrame() {
     if (!m_impl->grContext) {
+        LOG_ERROR("GLRenderer::endFrame - no GrContext");
         return;
     }
 
     // Flush and submit Skia rendering
     m_impl->grContext->flushAndSubmit();
+
+    // Check for GL errors after Skia rendering
+    GLenum glError = glGetError();
+    if (glError != GL_NO_ERROR) {
+        LOG_WARN("GLRenderer::endFrame - GL error after Skia render: {}", glError);
+    }
 
     // Swap buffers
     m_glContext->swapBuffers();
@@ -213,14 +264,29 @@ void GLRenderer::endFrame() {
 
 void GLRenderer::render() {
     if (!m_impl->grContext || !m_impl->surface) {
-        LOG_ERROR("GLRenderer not initialized");
+        LOG_ERROR("GLRenderer not initialized: grContext={}, surface={}", 
+                  static_cast<bool>(m_impl->grContext), 
+                  static_cast<bool>(m_impl->surface));
         return;
     }
 
     SkCanvas* canvas = m_impl->surface->getCanvas();
     if (!canvas) {
-        LOG_ERROR("Failed to get canvas");
+        LOG_ERROR("Failed to get canvas from surface");
         return;
+    }
+
+    // First, do a simple GL clear test to verify OpenGL is working
+    // This helps diagnose if the issue is with OpenGL or Skia
+    {
+        // Clear to a test color (dark blue) to verify basic GL works
+        glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        
+        GLenum glError = glGetError();
+        if (glError != GL_NO_ERROR) {
+            LOG_ERROR("GL clear failed: error {}", glError);
+        }
     }
 
     // Update demo renderer state
