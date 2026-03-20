@@ -196,101 +196,270 @@ message(STATUS "")
 # ========================================
 # vk-bootstrap (VkBootstrap.h) - only needed for Vulkan
 # ========================================
+message(STATUS "")
+message(STATUS "[vk-bootstrap Detection]")
+
 if(Vulkan_FOUND)
+    message(STATUS "  Vulkan available: Yes")
+    
     if(USE_SYSTEM_VK_BOOTSTRAP)
+        message(STATUS "  Mode: System vk-bootstrap")
         find_package(vk-bootstrap REQUIRED)
     else()
+        message(STATUS "  Mode: Local build")
+        
         # vk-bootstrap build output: deps/vk-bootstrap/out/{Debug,Release}/
         set(VKB_OUT_DIR "${DEPS_DIR}/vk-bootstrap/out/${CMAKE_BUILD_TYPE}")
         set(VKB_SOURCE "${DEPS_DIR}/vk-bootstrap")
         
+        message(STATUS "  VKBOOTSTRAP_DIR (from cmdline): \"${VKBOOTSTRAP_DIR}\"")
+        message(STATUS "  VKB_OUT_DIR: ${VKB_OUT_DIR}")
+        
         # Search paths
-        set(VKB_SEARCH_PATHS "${VKBOOTSTRAP_DIR}" "${VKB_OUT_DIR}" "${VKB_SOURCE}")
+        set(VKB_SEARCH_PATHS 
+            "${VKBOOTSTRAP_DIR}" 
+            "${VKB_OUT_DIR}" 
+            "${VKB_SOURCE}"
+        )
+        
+        # Find header
+        message(STATUS "  Searching for VkBootstrap.h:")
+        set(VKB_HEADER_FOUND FALSE)
+        foreach(_search_path ${VKB_SEARCH_PATHS})
+            if(_search_path AND EXISTS "${_search_path}/include/VkBootstrap.h")
+                message(STATUS "    [FOUND] ${_search_path}/include/VkBootstrap.h")
+                set(VKB_HEADER_FOUND TRUE)
+                break()
+            elseif(_search_path AND EXISTS "${_search_path}/VkBootstrap.h")
+                message(STATUS "    [FOUND] ${_search_path}/VkBootstrap.h")
+                set(VKB_HEADER_FOUND TRUE)
+                break()
+            endif()
+        endforeach()
+        
+        if(NOT VKB_HEADER_FOUND)
+            message(STATUS "    VkBootstrap.h not found in search paths")
+        endif()
         
         find_path(VK_BOOTSTRAP_INCLUDE_DIR 
             NAMES VkBootstrap.h 
             HINTS ${VKB_SEARCH_PATHS}
             PATH_SUFFIXES include)
         
+        # Find library
+        message(STATUS "  Searching for vk-bootstrap library:")
+        set(VKB_LIB_NAMES "vk-bootstrap" "vk-bootstrap-static")
+        set(VKB_LIB_FOUND FALSE)
+        foreach(_lib_name ${VKB_LIB_NAMES})
+            foreach(_search_path ${VKB_SEARCH_PATHS})
+                if(EXISTS "${_search_path}/lib/${_lib_name}.lib")
+                    message(STATUS "    [FOUND] ${_search_path}/lib/${_lib_name}.lib")
+                    set(VKB_LIB_FOUND TRUE)
+                    break()
+                elseif(EXISTS "${_search_path}/lib/${_lib_name}.a")
+                    message(STATUS "    [FOUND] ${_search_path}/lib/${_lib_name}.a")
+                    set(VKB_LIB_FOUND TRUE)
+                    break()
+                elseif(EXISTS "${_search_path}/lib64/${_lib_name}.a")
+                    message(STATUS "    [FOUND] ${_search_path}/lib64/${_lib_name}.a")
+                    set(VKB_LIB_FOUND TRUE)
+                    break()
+                endif()
+            endforeach()
+            if(VKB_LIB_FOUND)
+                break()
+            endif()
+        endforeach()
+        
+        if(NOT VKB_LIB_FOUND)
+            message(STATUS "    vk-bootstrap library not found in search paths")
+        endif()
+        
         find_library(VK_BOOTSTRAP_LIBRARY 
             NAMES vk-bootstrap vk-bootstrap-static 
             HINTS ${VKB_SEARCH_PATHS}
-            PATH_SUFFIXES lib)
+            PATH_SUFFIXES lib lib64)
     endif()
 
+    # Results
+    message(STATUS "")
+    message(STATUS "  vk-bootstrap Detection Results:")
     if(VK_BOOTSTRAP_INCLUDE_DIR AND VK_BOOTSTRAP_LIBRARY)
-        message(STATUS "vk-bootstrap: ${VK_BOOTSTRAP_LIBRARY}")
+        message(STATUS "    VK_BOOTSTRAP_INCLUDE_DIR: ${VK_BOOTSTRAP_INCLUDE_DIR}")
+        message(STATUS "    VK_BOOTSTRAP_LIBRARY: ${VK_BOOTSTRAP_LIBRARY}")
+        message(STATUS "    Status: Found")
     else()
-        message(STATUS "vk-bootstrap: Not found (Vulkan backend disabled)")
+        message(STATUS "    VK_BOOTSTRAP_INCLUDE_DIR: ${VK_BOOTSTRAP_INCLUDE_DIR}")
+        message(STATUS "    VK_BOOTSTRAP_LIBRARY: ${VK_BOOTSTRAP_LIBRARY}")
+        message(STATUS "    Status: Not found (Vulkan backend disabled)")
     endif()
 else()
+    message(STATUS "  Vulkan available: No")
+    message(STATUS "  Status: Skipping (Vulkan not found)")
     set(VK_BOOTSTRAP_INCLUDE_DIR "")
     set(VK_BOOTSTRAP_LIBRARY "")
 endif()
+message(STATUS "")
 
 # ========================================
 # Skia
 # ========================================
+message(STATUS "")
+message(STATUS "[Skia Detection]")
+
 if(USE_SYSTEM_SKIA)
+    message(STATUS "  Mode: System Skia")
     find_path(SKIA_INCLUDE_DIR NAMES core/SkSurface.h)
     find_library(SKIA_LIBRARY NAMES skia)
 else()
+    message(STATUS "  Mode: Local build")
+    
     # Skia build output: deps/skia/out/{Debug,Release}/
     set(SKIA_DIR "${SKIA_DIR}" CACHE PATH "Skia directory")
     if(NOT SKIA_DIR)
         set(SKIA_DIR "${DEPS_DIR}/skia")
     endif()
     
+    message(STATUS "  SKIA_DIR: ${SKIA_DIR}")
+    message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
+    
     set(SKIA_INCLUDE_DIR "${SKIA_DIR}")
     set(SKIA_LIB_PATHS 
         "${SKIA_DIR}/out/${CMAKE_BUILD_TYPE}"
         "${SKIA_DIR}/out"
     )
+    
+    # Check for Skia header
+    message(STATUS "  Searching for Skia headers:")
+    if(EXISTS "${SKIA_DIR}/include/core/SkSurface.h")
+        message(STATUS "    [FOUND] ${SKIA_DIR}/include/core/SkSurface.h")
+    elseif(EXISTS "${SKIA_DIR}/core/SkSurface.h")
+        message(STATUS "    [FOUND] ${SKIA_DIR}/core/SkSurface.h")
+    else()
+        message(STATUS "    Skia headers not found (expected at ${SKIA_DIR}/include/core/SkSurface.h)")
+    endif()
+    
+    # Check for Skia library
+    message(STATUS "  Searching for Skia library:")
+    set(SKIA_LIB_FOUND FALSE)
+    foreach(_lib_path ${SKIA_LIB_PATHS})
+        if(EXISTS "${_lib_path}/skia.lib")
+            message(STATUS "    [FOUND] ${_lib_path}/skia.lib")
+            set(SKIA_LIB_FOUND TRUE)
+            break()
+        elseif(EXISTS "${_lib_path}/libskia.a")
+            message(STATUS "    [FOUND] ${_lib_path}/libskia.a")
+            set(SKIA_LIB_FOUND TRUE)
+            break()
+        endif()
+    endforeach()
+    
+    if(NOT SKIA_LIB_FOUND)
+        message(STATUS "    Skia library not found")
+        message(STATUS "    Searched paths:")
+        foreach(_lib_path ${SKIA_LIB_PATHS})
+            message(STATUS "      - ${_lib_path}")
+        endforeach()
+    endif()
+    
     find_library(SKIA_LIBRARY NAMES skia HINTS ${SKIA_LIB_PATHS})
 endif()
 
-if(NOT SKIA_LIBRARY)
-    message(FATAL_ERROR "Skia not found. Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
+# Results
+message(STATUS "")
+message(STATUS "  Skia Detection Results:")
+if(SKIA_INCLUDE_DIR)
+    message(STATUS "    SKIA_INCLUDE_DIR: ${SKIA_INCLUDE_DIR}")
+else()
+    message(STATUS "    SKIA_INCLUDE_DIR: (not set)")
 endif()
-message(STATUS "Skia: ${SKIA_LIBRARY}")
+
+if(SKIA_LIBRARY)
+    message(STATUS "    SKIA_LIBRARY: ${SKIA_LIBRARY}")
+else()
+    message(FATAL_ERROR "    SKIA_LIBRARY: Not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
+endif()
+message(STATUS "")
 
 # ========================================
 # spdlog
 # ========================================
+message(STATUS "")
+message(STATUS "[spdlog Detection]")
+
 if(USE_SYSTEM_SPDLOG)
+    message(STATUS "  Mode: System spdlog")
     find_package(spdlog REQUIRED)
 else()
+    message(STATUS "  Mode: Local build (header-only)")
+    
     set(SPDLOG_DIR "${SPDLOG_DIR}" CACHE PATH "spdlog directory")
     if(NOT SPDLOG_DIR)
         set(SPDLOG_DIR "${DEPS_DIR}/spdlog")
     endif()
     
+    message(STATUS "  SPDLOG_DIR: ${SPDLOG_DIR}")
+    
     set(SPDLOG_INCLUDE_DIR "${SPDLOG_DIR}/include")
+    
+    # Check for spdlog header
+    message(STATUS "  Searching for spdlog header:")
+    if(EXISTS "${SPDLOG_INCLUDE_DIR}/spdlog/spdlog.h")
+        message(STATUS "    [FOUND] ${SPDLOG_INCLUDE_DIR}/spdlog/spdlog.h")
+    else()
+        message(STATUS "    spdlog.h not found at ${SPDLOG_INCLUDE_DIR}/spdlog/spdlog.h")
+    endif()
     
     if(NOT EXISTS "${SPDLOG_INCLUDE_DIR}/spdlog/spdlog.h")
         message(FATAL_ERROR "spdlog not found. Run: python sync.py")
     endif()
 endif()
-message(STATUS "spdlog: ${SPDLOG_INCLUDE_DIR}")
+
+# Results
+message(STATUS "")
+message(STATUS "  spdlog Detection Results:")
+message(STATUS "    SPDLOG_INCLUDE_DIR: ${SPDLOG_INCLUDE_DIR}")
+message(STATUS "")
 
 # ========================================
 # CLI11
 # ========================================
+message(STATUS "")
+message(STATUS "[CLI11 Detection]")
+
 if(USE_SYSTEM_CLI11)
+    message(STATUS "  Mode: System CLI11")
     find_path(CLI11_INCLUDE_DIR NAMES CLI/CLI.hpp)
 else()
+    message(STATUS "  Mode: Local build (header-only)")
+    
     set(CLI11_DIR "${CLI11_DIR}" CACHE PATH "CLI11 directory")
     if(NOT CLI11_DIR)
         set(CLI11_DIR "${DEPS_DIR}/CLI11")
     endif()
     
+    message(STATUS "  CLI11_DIR: ${CLI11_DIR}")
+    
     set(CLI11_INCLUDE_DIR "${CLI11_DIR}/include")
+    
+    # Check for CLI11 header
+    message(STATUS "  Searching for CLI11 header:")
+    if(EXISTS "${CLI11_INCLUDE_DIR}/CLI/CLI.hpp")
+        message(STATUS "    [FOUND] ${CLI11_INCLUDE_DIR}/CLI/CLI.hpp")
+    else()
+        message(STATUS "    CLI.hpp not found at ${CLI11_INCLUDE_DIR}/CLI/CLI.hpp")
+    endif()
     
     if(NOT EXISTS "${CLI11_INCLUDE_DIR}/CLI/CLI.hpp")
         message(FATAL_ERROR "CLI11 not found. Run: python sync.py")
     endif()
 endif()
-message(STATUS "CLI11: ${CLI11_INCLUDE_DIR}")
+
+# Results
+message(STATUS "")
+message(STATUS "  CLI11 Detection Results:")
+message(STATUS "    CLI11_INCLUDE_DIR: ${CLI11_INCLUDE_DIR}")
+message(STATUS "")
 
 # ========================================
 # System Dependencies (Linux/macOS)

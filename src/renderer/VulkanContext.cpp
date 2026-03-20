@@ -228,8 +228,8 @@ bool VulkanContext::createInstance(SDL_Window* window) {
     instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
-    LOG_DEBUG("Instance extensions:");
-    for (const auto& ext : instanceExtensions) {
+    LOG_DEBUG("Instance extensions ({}):", instanceExtensions.size());
+    for ([[maybe_unused]] const auto& ext : instanceExtensions) {
         LOG_DEBUG("  {}", ext);
     }
 
