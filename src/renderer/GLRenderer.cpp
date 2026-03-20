@@ -15,6 +15,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkImage.h"
 
 // OpenGL headers
 #include <SDL3/SDL_opengl.h>
@@ -23,7 +24,7 @@ namespace skia_renderer {
 
 struct GLRenderer::Impl {
     sk_sp<GrDirectContext> grContext;
-    sk_sp<SkSurface> surface;
+    sk_sp<SkSurface> surface;  // Offscreen render target managed by Skia
 };
 
 GLRenderer::GLRenderer() 
@@ -92,7 +93,6 @@ bool GLRenderer::createSkiaContext() {
 
     // Create context options
     GrContextOptions options;
-    options.fPreferExternalImagesOverES3 = true;
 
     // Create Ganesh context
     m_impl->grContext = GrDirectContexts::MakeGL(glInterface, options);
@@ -114,68 +114,33 @@ bool GLRenderer::createSurface() {
     // Make sure GL context is current
     m_glContext->makeCurrent();
 
-    // Get the default framebuffer (0 = window framebuffer)
-    GLint framebuffer = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+    LOG_INFO("  Creating offscreen Skia render target ({}x{})...", m_width, m_height);
 
-    LOG_INFO("  Creating Skia surface (FBO: {}, {}x{})...", framebuffer, m_width, m_height);
-    
-    // Verify framebuffer is valid
-    if (framebuffer < 0) {
-        LOG_ERROR("  Invalid framebuffer ID: {}", framebuffer);
-        return false;
-    }
-
-    // Create backend render target wrapping the default framebuffer
-    GrGLFramebufferInfo fbInfo;
-    fbInfo.fFBOID = static_cast<GrGLuint>(framebuffer);
-    fbInfo.fFormat = GL_RGBA8;
-
-    // Log actual framebuffer info
-    LOG_INFO("  FBO info: ID={}, Format=GL_RGBA8", fbInfo.fFBOID);
-
-    GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeGL(
+    // Create image info for the render target
+    // Use BGRA which is often more compatible with OpenGL
+    SkImageInfo imageInfo = SkImageInfo::Make(
         m_width, m_height,
-        0,      // sampleCnt
-        8,      // stencilBits
-        fbInfo
+        kRGBA_8888_SkColorType,
+        kPremul_SkAlphaType,
+        SkColorSpace::MakeSRGB()
     );
 
-    if (!backendRT.isValid()) {
-        LOG_ERROR("  Failed to create backend render target");
-        return false;
-    }
-    
-    LOG_INFO("  Backend render target: {}x{}, stencil={}",
-             backendRT.width(), backendRT.height(), backendRT.stencilBits());
-
-    // Create Skia surface
-    // OpenGL uses bottom-left origin
-    SkSurfaceProps props(0, kUnknown_SkPixelGeometry);
-    m_impl->surface = SkSurfaces::WrapBackendRenderTarget(
+    // Create offscreen render target - this is what Skia's example does
+    m_impl->surface = SkSurfaces::RenderTarget(
         m_impl->grContext.get(),
-        backendRT,
+        skgpu::Budgeted::kYes,
+        imageInfo,
+        0,  // sampleCount = 0 means no MSAA
         kBottomLeft_GrSurfaceOrigin,  // OpenGL convention
-        kRGBA_8888_SkColorType,
-        SkColorSpace::MakeSRGB(),
-        &props
+        nullptr  // surfaceProps
     );
 
     if (!m_impl->surface) {
-        LOG_ERROR("  Failed to wrap framebuffer as Skia surface");
+        LOG_ERROR("  Failed to create offscreen render target");
         return false;
     }
 
-    LOG_INFO("  Skia surface created successfully");
-    
-    // Verify we can get a canvas
-    SkCanvas* canvas = m_impl->surface->getCanvas();
-    if (!canvas) {
-        LOG_ERROR("  Failed to get canvas from surface");
-        return false;
-    }
-    
-    LOG_INFO("  Canvas obtained successfully, imageInfo: {}x{}",
+    LOG_INFO("  Offscreen render target created successfully ({}x{})", 
              m_impl->surface->width(), m_impl->surface->height());
     
     return true;
@@ -233,29 +198,86 @@ bool GLRenderer::beginFrame() {
     // Set viewport to match the current window size
     glViewport(0, 0, m_width, m_height);
     
-    // Verify OpenGL state
-    GLenum glError = glGetError();
-    if (glError != GL_NO_ERROR) {
-        LOG_WARN("GLRenderer::beginFrame - GL error before render: {}", glError);
-    }
-    
     return true;
 }
 
 void GLRenderer::endFrame() {
-    if (!m_impl->grContext) {
-        LOG_ERROR("GLRenderer::endFrame - no GrContext");
+    if (!m_impl->grContext || !m_impl->surface) {
         return;
     }
 
-    // Flush and submit Skia rendering
+    // Flush Skia commands
     m_impl->grContext->flushAndSubmit();
 
-    // Check for GL errors after Skia rendering
-    GLenum glError = glGetError();
-    if (glError != GL_NO_ERROR) {
-        LOG_WARN("GLRenderer::endFrame - GL error after Skia render: {}", glError);
+    // Now we need to blit the Skia render target to the default framebuffer
+    // Get the backend texture from the Skia surface
+    GrBackendTexture backendTex = SkSurfaces::GetBackendTexture(
+        m_impl->surface.get(),
+        SkSurfaces::BackendHandleAccess::kFlushRead
+    );
+    
+    if (!backendTex.isValid()) {
+        LOG_WARN("Failed to get backend texture from surface");
+        // Fallback: just swap buffers
+        m_glContext->swapBuffers();
+        return;
     }
+
+    // Get GL texture info from backend texture
+    GrGLTextureInfo texInfo;
+    if (!GrBackendTextures::GetGLTextureInfo(backendTex, &texInfo)) {
+        LOG_WARN("Failed to get GL texture info");
+        m_glContext->swapBuffers();
+        return;
+    }
+    
+    LOG_DEBUG("Blitting texture {} to screen", texInfo.fID);
+
+    // Save current GL state
+    GLint prevFBO = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
+    GLint prevProgram = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
+    
+    // Bind default framebuffer (FBO 0)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_width, m_height);
+    
+    // Create a temporary FBO for blitting
+    GLuint blitFBO = 0;
+    glGenFramebuffers(1, &blitFBO);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, blitFBO);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 
+                           GL_TEXTURE_2D, texInfo.fID, 0);
+    
+    // Check framebuffer status
+    GLenum fboStatus = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+    if (fboStatus == GL_FRAMEBUFFER_COMPLETE) {
+        // Blit from Skia texture to default framebuffer
+        glDisable(GL_BLEND);
+        glDisable(GL_DEPTH_TEST);
+        
+        glBlitFramebuffer(
+            0, 0, m_width, m_height,  // src
+            0, 0, m_width, m_height,  // dst
+            GL_COLOR_BUFFER_BIT,
+            GL_NEAREST
+        );
+    } else {
+        LOG_WARN("Blit FBO not complete: {}", fboStatus);
+    }
+    
+    // Cleanup
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &blitFBO);
+    
+    // Restore GL state
+    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
+    if (prevProgram) glUseProgram(prevProgram);
+    if (prevBlend) glEnable(GL_BLEND);
+    if (prevDepthTest) glEnable(GL_DEPTH_TEST);
 
     // Swap buffers
     m_glContext->swapBuffers();
@@ -263,29 +285,14 @@ void GLRenderer::endFrame() {
 
 void GLRenderer::render() {
     if (!m_impl->grContext || !m_impl->surface) {
-        LOG_ERROR("GLRenderer not initialized: grContext={}, surface={}", 
-                  static_cast<bool>(m_impl->grContext), 
-                  static_cast<bool>(m_impl->surface));
+        LOG_ERROR("GLRenderer not initialized");
         return;
     }
 
     SkCanvas* canvas = m_impl->surface->getCanvas();
     if (!canvas) {
-        LOG_ERROR("Failed to get canvas from surface");
+        LOG_ERROR("Failed to get canvas");
         return;
-    }
-
-    // First, do a simple GL clear test to verify OpenGL is working
-    // This helps diagnose if the issue is with OpenGL or Skia
-    {
-        // Clear to a test color (dark blue) to verify basic GL works
-        glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-        
-        GLenum glError = glGetError();
-        if (glError != GL_NO_ERROR) {
-            LOG_ERROR("GL clear failed: error {}", glError);
-        }
     }
 
     // Update demo renderer state
