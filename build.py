@@ -359,7 +359,7 @@ def check_sdl3_built(sdl3_out_dir: Path) -> tuple:
 def build_main_project(script_dir: Path, build_type: str,
                        clang: str, clang_pp: str, sccache: str = None,
                        vulkan_sdk: str = None, clean: bool = False,
-                       cmake_args: str = None) -> bool:
+                       cmake_args: str = None, verbose: bool = False) -> bool:
     """Build main project with CMake -> build/{Debug,Release}/"""
     print("\n[skia-renderer]")
     
@@ -382,30 +382,43 @@ def build_main_project(script_dir: Path, build_type: str,
     spdlog_dir = deps_dir / "spdlog"
     cli11_dir = deps_dir / "CLI11"
     
-    # Check if SDL3 is built
-    print("  Checking dependencies...")
-    sdl3_built, sdl3_config_dir = check_sdl3_built(sdl3_out_dir)
-    if not sdl3_built:
-        print(f"  WARNING: SDL3 not found at {sdl3_out_dir}")
-        print(f"  Run: python build.py --build-type {build_type} (without --skip-deps)")
+    # Check dependencies (verbose mode shows details)
+    if verbose:
+        print("  Checking dependencies...")
+        sdl3_built, sdl3_config_dir = check_sdl3_built(sdl3_out_dir)
+        if not sdl3_built:
+            print(f"  WARNING: SDL3 not found at {sdl3_out_dir}")
+            print(f"  Run: python build.py --build-type {build_type} (without --skip-deps)")
+        else:
+            print(f"  SDL3 found: {sdl3_config_dir}")
+        
+        # Check other dependencies
+        skia_lib = skia_dir / "out" / build_type / "skia.lib"
+        skia_lib_alt = skia_dir / "out" / build_type / "libskia.a"
+        if not skia_lib.exists() and not skia_lib_alt.exists():
+            print(f"  WARNING: Skia not built for {build_type}")
+            skia_found = False
+        else:
+            print(f"  Skia found: {skia_lib if skia_lib.exists() else skia_lib_alt}")
+            skia_found = True
+        
+        if not (spdlog_dir / "include" / "spdlog" / "spdlog.h").exists():
+            print(f"  WARNING: spdlog not found")
+        
+        if not (cli11_dir / "include" / "CLI" / "CLI.hpp").exists():
+            print(f"  WARNING: CLI11 not found")
     else:
-        print(f"  SDL3 found: {sdl3_config_dir}")
-    
-    # Check other dependencies
-    skia_lib = skia_dir / "out" / build_type / "skia.lib"
-    skia_lib_alt = skia_dir / "out" / build_type / "libskia.a"
-    if not skia_lib.exists() and not skia_lib_alt.exists():
-        print(f"  WARNING: Skia not built for {build_type}")
-        skia_found = False
-    else:
-        print(f"  Skia found: {skia_lib if skia_lib.exists() else skia_lib_alt}")
-        skia_found = True
-    
-    if not (spdlog_dir / "include" / "spdlog" / "spdlog.h").exists():
-        print(f"  WARNING: spdlog not found")
-    
-    if not (cli11_dir / "include" / "CLI" / "CLI.hpp").exists():
-        print(f"  WARNING: CLI11 not found")
+        # Simple dependency check (non-verbose)
+        sdl3_built, sdl3_config_dir = check_sdl3_built(sdl3_out_dir)
+        skia_lib = skia_dir / "out" / build_type / "skia.lib"
+        skia_lib_alt = skia_dir / "out" / build_type / "libskia.a"
+        skia_found = skia_lib.exists() or skia_lib_alt.exists()
+        
+        deps_ok = sdl3_built and skia_found
+        if deps_ok:
+            print("  Dependencies: OK")
+        else:
+            print("  Dependencies: Some missing (use -v for details)")
     
     # CMake configure
     cmd = [
@@ -437,13 +450,14 @@ def build_main_project(script_dir: Path, build_type: str,
         f"-DCLI11_DIR={cli11_dir}"
     ])
     
-    # Print CMake variables for debugging
-    print(f"  CMake variables:")
-    print(f"    SDL3_DIR={sdl3_cmake_dir}")
-    print(f"    VKBOOTSTRAP_DIR={vkb_dir}")
-    print(f"    SKIA_DIR={skia_dir}")
-    print(f"    SPDLOG_DIR={spdlog_dir}")
-    print(f"    CLI11_DIR={cli11_dir}")
+    # Print CMake variables only in verbose mode
+    if verbose:
+        print(f"  CMake variables:")
+        print(f"    SDL3_DIR={sdl3_cmake_dir}")
+        print(f"    VKBOOTSTRAP_DIR={vkb_dir}")
+        print(f"    SKIA_DIR={skia_dir}")
+        print(f"    SPDLOG_DIR={spdlog_dir}")
+        print(f"    CLI11_DIR={cli11_dir}")
     
     if cmake_args:
         cmd.extend(cmake_args.split())
@@ -503,6 +517,7 @@ Directory Structure:
     # Other options
     parser.add_argument("--vulkan-sdk", help="Vulkan SDK path")
     parser.add_argument("--cmake-args", help="Extra CMake arguments for main project")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed dependency info")
     
     args = parser.parse_args()
     
@@ -572,7 +587,7 @@ Directory Structure:
         build_main_project(
             script_dir, args.build_type,
             clang, clang_pp, sccache, vulkan_sdk,
-            args.clean, args.cmake_args
+            args.clean, args.cmake_args, args.verbose
         )
     
     # Summary

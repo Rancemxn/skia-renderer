@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
     bool verbose = false;
     bool show_version = false;
     std::string vulkanVersionStr = "1.3";
-    std::string glVersionStr = "3.3";
+    std::string glVersionStr = "4.6";
     std::string backendStr = "vulkan";
     
     app.add_option("-W,--width", width, "Window width")->check(CLI::Range(100, 7680));
