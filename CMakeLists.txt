@@ -52,23 +52,146 @@ endif()
 # ========================================
 # SDL3
 # ========================================
+message(STATUS "")
+message(STATUS "[SDL3 Detection]")
+
+# SDL3 output directory
+set(SDL3_OUT_DIR "${DEPS_DIR}/SDL3/out/${CMAKE_BUILD_TYPE}")
+
+message(STATUS "  SDL3_DIR (from cmdline): \"${SDL3_DIR}\"")
+message(STATUS "  SDL3_OUT_DIR: ${SDL3_OUT_DIR}")
+message(STATUS "  CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+
 if(USE_SYSTEM_SDL)
+    message(STATUS "  Mode: System SDL3")
     find_package(SDL3 REQUIRED)
 else()
-    # SDL3 build output: deps/SDL3/out/{Debug,Release}/
-    set(SDL3_OUT_DIR "${DEPS_DIR}/SDL3/out/${CMAKE_BUILD_TYPE}")
+    message(STATUS "  Mode: Local build")
     
-    # Find SDL3Config.cmake
-    set(SDL3_SEARCH_PATHS
-        "${SDL3_DIR}"
-        "${SDL3_OUT_DIR}/lib/cmake/SDL3"
-        "${SDL3_OUT_DIR}/cmake"
-        "${DEPS_DIR}/SDL3/lib/cmake/SDL3"
+    # Define all possible SDL3Config.cmake locations
+    # SDL3 can install cmake files in various locations depending on build configuration
+    set(SDL3_CMAKE_SEARCH_PATHS
+        "${SDL3_DIR}"                           # User-specified via -DSDL3_DIR
+        "${SDL3_OUT_DIR}"                       # Direct in output dir (most common on Windows)
+        "${SDL3_OUT_DIR}/lib/cmake/SDL3"        # Standard cmake location
+        "${SDL3_OUT_DIR}/cmake"                 # Alternative cmake location
+        "${SDL3_OUT_DIR}/lib/cmake"             # lib/cmake without SDL3 subdir
+        "${DEPS_DIR}/SDL3/lib/cmake/SDL3"       # Source tree cmake
+        "${DEPS_DIR}/SDL3/cmake"                # Source tree cmake (alternative)
     )
     
-    find_package(SDL3 REQUIRED HINTS ${SDL3_SEARCH_PATHS})
+    # Find SDL3Config.cmake
+    set(SDL3_CONFIG_PATH "")
+    message(STATUS "  Searching for SDL3Config.cmake:")
+    
+    foreach(_search_path ${SDL3_CMAKE_SEARCH_PATHS})
+        if(_search_path)
+            # Check for SDL3Config.cmake directly in the path
+            if(EXISTS "${_search_path}/SDL3Config.cmake")
+                message(STATUS "    [FOUND] ${_search_path}/SDL3Config.cmake")
+                set(SDL3_CONFIG_PATH "${_search_path}")
+                break()
+            endif()
+        endif()
+    endforeach()
+    
+    # If not found, show what we checked
+    if(NOT SDL3_CONFIG_PATH)
+        message(STATUS "    SDL3Config.cmake not found in any standard location")
+        message(STATUS "  Checking for SDL3.dll and SDL3.lib (fallback detection):")
+        
+        # Check for built artifacts
+        set(SDL3_DLL "${SDL3_OUT_DIR}/SDL3.dll")
+        set(SDL3_LIB "${SDL3_OUT_DIR}/SDL3.lib")
+        set(SDL3_LIB_ALT "${SDL3_OUT_DIR}/lib/SDL3.lib")
+        
+        if(EXISTS "${SDL3_DLL}")
+            message(STATUS "    [FOUND] SDL3.dll: ${SDL3_DLL}")
+        endif()
+        if(EXISTS "${SDL3_LIB}")
+            message(STATUS "    [FOUND] SDL3.lib: ${SDL3_LIB}")
+        elseif(EXISTS "${SDL3_LIB_ALT}")
+            message(STATUS "    [FOUND] SDL3.lib: ${SDL3_LIB_ALT}")
+        endif()
+        
+        # Try using the SDL3_DIR from command line even if SDL3Config.cmake check failed
+        # (it might still work with find_package)
+        if(SDL3_DIR)
+            message(STATUS "  Attempting to use SDL3_DIR: ${SDL3_DIR}")
+        endif()
+    endif()
+    
+    # Try find_package with hints
+    if(SDL3_CONFIG_PATH)
+        message(STATUS "  Using SDL3 cmake path: ${SDL3_CONFIG_PATH}")
+        find_package(SDL3 REQUIRED CONFIG 
+            HINTS "${SDL3_CONFIG_PATH}" 
+            NO_DEFAULT_PATH
+        )
+    elseif(SDL3_DIR)
+        message(STATUS "  Using SDL3_DIR hint: ${SDL3_DIR}")
+        find_package(SDL3 REQUIRED CONFIG 
+            HINTS "${SDL3_DIR}" "${SDL3_OUT_DIR}"
+        )
+    else()
+        message(STATUS "  Using default search paths")
+        find_package(SDL3 REQUIRED CONFIG 
+            HINTS "${SDL3_OUT_DIR}"
+        )
+    endif()
 endif()
-message(STATUS "SDL3: ${SDL3_INCLUDE_DIRS}")
+
+# Diagnostic output
+message(STATUS "")
+message(STATUS "  SDL3 Detection Results:")
+message(STATUS "    SDL3_FOUND: ${SDL3_FOUND}")
+
+# Handle SDL3 variables - they might be named differently depending on SDL3 version
+# SDL3 3.x uses SDL3_INCLUDE_DIRS, SDL3_LIBRARIES
+# Some builds might set SDL3_INCLUDE_DIR instead
+if(SDL3_INCLUDE_DIRS)
+    message(STATUS "    SDL3_INCLUDE_DIRS: ${SDL3_INCLUDE_DIRS}")
+elseif(SDL3_INCLUDE_DIR)
+    message(STATUS "    SDL3_INCLUDE_DIR: ${SDL3_INCLUDE_DIR}")
+    set(SDL3_INCLUDE_DIRS "${SDL3_INCLUDE_DIR}")
+else()
+    # Try to find include directory manually
+    message(STATUS "    SDL3_INCLUDE_DIRS: (empty, searching...)")
+    
+    # SDL3 include directories - check multiple locations
+    find_path(SDL3_INCLUDE_DIR
+        NAMES SDL3/SDL.h SDL.h
+        PATHS
+            "${SDL3_OUT_DIR}/include"
+            "${SDL3_OUT_DIR}/include-config-debug"
+            "${SDL3_DIR}/include"
+            "${SDL3_DIR}/include-config-debug"
+            "${DEPS_DIR}/SDL3/include"
+        NO_DEFAULT_PATH
+    )
+    
+    if(SDL3_INCLUDE_DIR)
+        message(STATUS "    Found SDL3 include dir: ${SDL3_INCLUDE_DIR}")
+        set(SDL3_INCLUDE_DIRS "${SDL3_INCLUDE_DIR}")
+    else()
+        message(WARNING "    SDL3 include directory not found!")
+    endif()
+endif()
+
+if(SDL3_LIBRARIES)
+    message(STATUS "    SDL3_LIBRARIES: ${SDL3_LIBRARIES}")
+else()
+    message(STATUS "    SDL3_LIBRARIES: (empty, will use SDL3::SDL3 target)")
+endif()
+
+# Check if we have the SDL3::SDL3 target (modern CMake)
+if(TARGET SDL3::SDL3)
+    message(STATUS "    SDL3::SDL3 target: Available")
+else()
+    message(STATUS "    SDL3::SDL3 target: Not available")
+endif()
+
+message(STATUS "")
 
 # ========================================
 # vk-bootstrap (VkBootstrap.h) - only needed for Vulkan
