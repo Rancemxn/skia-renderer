@@ -10,7 +10,6 @@
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
@@ -74,13 +73,9 @@ bool GLRenderer::initialize(SDL_Window* window, int width, int height, const Bac
 bool GLRenderer::createSkiaContext() {
     LOG_INFO("  Creating Skia Ganesh context...");
 
-    // Create GL interface using SDL's GL loader
-    auto getProc = [](void* ctx, const char name[]) -> GrGLFuncPtr {
-        (void)ctx;
-        return reinterpret_cast<GrGLFuncPtr>(SDL_GL_GetProcAddress(name));
-    };
+    // Create GL interface - use native interface (platform-specific)
+    sk_sp<const GrGLInterface> glInterface = GrGLMakeNativeInterface();
 
-    sk_sp<const GrGLInterface> glInterface = GrGLMakeAssembledInterface(nullptr, getProc);
     if (!glInterface) {
         LOG_ERROR("  Failed to create GL interface");
         return false;
