@@ -371,7 +371,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     
     # GN args
     is_windows = platform.system() == "Windows"
-    crt_flag = "/MTd" if build_type == "Debug" else "/MT"
     
     gn_args = [
         f'target_cpu="{target_cpu}"',
@@ -384,17 +383,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
         'angle_enable_d3d9=false',
         'angle_standalone=true',
     ]
-    
-    if is_windows:
-        gn_args.extend([
-            f'clang_win="{llvm_path}"',
-            f'extra_cflags=["{crt_flag}"]',
-            f'extra_cflags_cc=["/GR", "/EHsc", "{crt_flag}"]',
-        ])
-    else:
-        gn_args.extend([
-            'extra_cflags_cc=["-frtti", "-fexceptions"]',
-        ])
     
     if sccache:
         gn_args.append(f'cc_wrapper="{sccache}"')
