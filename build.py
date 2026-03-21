@@ -384,7 +384,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
         'angle_enable_gl=true',
         'angle_enable_d3d11=true',
         'angle_enable_d3d9=false',
-        'angle_has_build=false',  # Standalone build without Chromium build system
         'angle_standalone=true',
         # Use bundled dependencies where possible
         'angle_use_custom_libcxx=false',
