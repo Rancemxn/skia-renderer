@@ -283,10 +283,10 @@ def build_vkbootstrap(source_dir: Path, build_type: str,
 
 def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
                 depot_tools: Path, target_cpu: str, sccache: str = None,
-                with_angle: bool = True) -> bool:
+                skip_angle: bool = False) -> bool:
     """Build ANGLE with GN + Ninja -> deps/angle/out/{Debug,Release}/"""
-    if not with_angle:
-        print("\n[ANGLE] Skipped (--without-angle)")
+    if skip_angle:
+        print("\n[ANGLE] Skipped (--skip-angle)")
         return True
     
     print("\n[ANGLE]")
@@ -387,7 +387,7 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
 
 def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
                depot_tools: Path, target_cpu: str, sccache: str = None,
-               use_external_angle: bool = False) -> bool:
+               use_angle: bool = True) -> bool:
     """Build Skia with GN + Ninja -> deps/skia/out/{Debug,Release}/"""
     print("\n[Skia]")
     
@@ -437,13 +437,10 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     is_windows = platform.system() == "Windows"
     crt_flag = "/MTd" if build_type == "Debug" else "/MT"
     
-    # IMPORTANT: Always disable Skia's built-in ANGLE when using external ANGLE
-    # When use_external_angle=True: we build external ANGLE separately
-    # When use_external_angle=False: we don't build any ANGLE (neither external nor built-in)
-    # This avoids conflicts and ensures consistent behavior
-    skia_use_angle = "false"
-    if use_external_angle:
-        print("  Using external ANGLE (Skia's built-in ANGLE disabled)")
+    # ANGLE usage - controlled by --skip-angle
+    skia_use_angle = "true" if use_angle else "false"
+    if use_angle:
+        print("  Using external ANGLE (Skia will use ANGLE)")
     else:
         print("  ANGLE disabled (using native OpenGL)")
     
@@ -459,7 +456,7 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         'skia_use_gl=true',
         'skia_enable_pdf=true',
         'skia_enable_precompile=true',
-        f'skia_use_angle={skia_use_angle}',  # Controlled by external ANGLE usage
+        f'skia_use_angle={skia_use_angle}',
         'skia_use_freetype=true',
         'skia_use_expat=true',
         'skia_use_zlib=true',
@@ -598,10 +595,8 @@ def build_main_project(script_dir: Path, build_type: str,
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     ]
     
-    # Add USE_ANGLE option
-    build_angle_enabled = args.with_angle and not args.without_angle
-    if build_angle_enabled:
-        cmd.append("-DUSE_ANGLE=ON")
+    # ANGLE is required - always enable
+    cmd.append("-DUSE_ANGLE=ON")
     
     if sccache:
         cmd.extend([
@@ -684,12 +679,6 @@ Directory Structure:
     parser.add_argument("--target-cpu", default="x64", help="Target CPU for Skia (default: x64)")
     parser.add_argument("--clean", action="store_true", help="Clean before building")
     
-    # ANGLE options
-    parser.add_argument("--with-angle", action="store_true", default=False,
-                       help="Build with ANGLE support (external dependency)")
-    parser.add_argument("--without-angle", action="store_true", default=False,
-                       help="Disable ANGLE build (if --with-angle was set)")
-    
     # Skip options
     parser.add_argument("--skip-deps", action="store_true", help="Skip building dependencies")
     parser.add_argument("--skip-main", action="store_true", help="Skip building main project")
@@ -759,17 +748,15 @@ Directory Structure:
         if not args.skip_vkbootstrap:
             build_vkbootstrap(deps_dir / "vk-bootstrap", args.build_type, clang, clang_pp, sccache)
         
-        # Build ANGLE if --with-angle is specified
-        build_angle_enabled = args.with_angle and not args.without_angle
-        if not args.skip_angle:
-            build_angle(
-                deps_dir / "angle", args.build_type, llvm_path, depot_tools,
-                args.target_cpu, sccache, with_angle=build_angle_enabled
-            )
+        # Build ANGLE (can be skipped with --skip-angle)
+        build_angle(
+            deps_dir / "angle", args.build_type, llvm_path, depot_tools,
+            args.target_cpu, sccache, skip_angle=args.skip_angle
+        )
         
         if not args.skip_skia:
             build_skia(deps_dir / "skia", args.build_type, llvm_path, depot_tools, 
-                      args.target_cpu, sccache, use_external_angle=build_angle_enabled)
+                      args.target_cpu, sccache, use_angle=not args.skip_angle)
     
     # Build main project
     if not args.skip_main:

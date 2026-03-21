@@ -565,7 +565,7 @@ def sync_deps(args):
             print("  [OK] CLI11")
         print()
     
-    # 5. ANGLE
+    # 5. ANGLE (can be skipped with --skip-angle)
     if not args.skip_angle:
         print("=" * 50)
         print("[5/6] ANGLE")
@@ -578,6 +578,9 @@ def sync_deps(args):
         else:
             git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT)
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
+        print()
+    else:
+        print("[5/6] ANGLE - Skipped (--skip-angle)")
         print()
     
     # 6. Skia

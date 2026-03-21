@@ -15,8 +15,8 @@ option(USE_SYSTEM_SPDLOG "Use system spdlog" OFF)
 option(USE_SYSTEM_CLI11 "Use system CLI11" OFF)
 option(VERBOSE_DEPS "Show detailed dependency detection info" OFF)
 
-# ANGLE option (disabled by default, must be explicitly enabled with -DUSE_ANGLE=ON)
-option(USE_ANGLE "Enable ANGLE support (OpenGL ES to Vulkan/D3D translation layer)" OFF)
+# ANGLE option (enabled by default, can be disabled with -DUSE_ANGLE=OFF)
+option(USE_ANGLE "Enable ANGLE support (OpenGL ES to Vulkan/D3D translation layer)" ON)
 
 # ========================================
 # Build Type
@@ -573,7 +573,7 @@ if(NOT WIN32)
 endif()
 
 # ========================================
-# ANGLE (Optional - enabled with -DUSE_ANGLE=ON)
+# ANGLE (Optional - enabled by default)
 # ========================================
 if(USE_ANGLE)
     if(VERBOSE_DEPS)
@@ -670,20 +670,19 @@ if(USE_ANGLE)
         endif()
     endforeach()
     
+    # ANGLE is required when USE_ANGLE is ON
     if(NOT ANGLE_EGL_FOUND)
         if(VERBOSE_DEPS)
             message(STATUS "    EGL library not found")
         endif()
-        message(WARNING "ANGLE EGL library not found. Build with: python build.py --with-angle --build-type ${CMAKE_BUILD_TYPE}")
-        set(USE_ANGLE OFF)
+        message(FATAL_ERROR "ANGLE EGL library not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
     endif()
     
     if(NOT ANGLE_GLES_FOUND)
         if(VERBOSE_DEPS)
             message(STATUS "    GLESv2 library not found")
         endif()
-        message(WARNING "ANGLE GLESv2 library not found. Build with: python build.py --with-angle --build-type ${CMAKE_BUILD_TYPE}")
-        set(USE_ANGLE OFF)
+        message(FATAL_ERROR "ANGLE GLESv2 library not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
     endif()
     
     # Results
@@ -693,7 +692,6 @@ if(USE_ANGLE)
         message(STATUS "    ANGLE_INCLUDE_DIR: ${ANGLE_INCLUDE_DIR}")
         message(STATUS "    ANGLE_EGL_LIBRARY: ${ANGLE_EGL_LIBRARY}")
         message(STATUS "    ANGLE_GLES_LIBRARY: ${ANGLE_GLES_LIBRARY}")
-        message(STATUS "    USE_ANGLE: ${USE_ANGLE}")
         message(STATUS "")
     endif()
 else()
@@ -726,7 +724,7 @@ add_executable(${PROJECT_NAME}
 # Enable Vulkan backend
 target_compile_definitions(${PROJECT_NAME} PRIVATE VULKAN_BACKEND_ENABLED=1)
 
-# Add ANGLE definition if enabled
+# ANGLE support (conditional)
 if(USE_ANGLE)
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_ANGLE=1)
 endif()
@@ -741,7 +739,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${VK_BOOTSTRAP_INCLUDE_DIR}
 )
 
-# Add ANGLE include directories if enabled
+# ANGLE include directories (conditional)
 if(USE_ANGLE)
     target_include_directories(${PROJECT_NAME} PRIVATE
         ${ANGLE_INCLUDE_DIR}
@@ -762,7 +760,7 @@ set(LINK_LIBS
     ${VK_BOOTSTRAP_LIBRARY}
 )
 
-# Add ANGLE libraries if enabled
+# ANGLE libraries (conditional)
 if(USE_ANGLE)
     list(APPEND LINK_LIBS
         ${ANGLE_EGL_LIBRARY}
@@ -863,7 +861,7 @@ message(STATUS "  OpenGL:     Available")
 if(USE_ANGLE)
     message(STATUS "  ANGLE:      Enabled (OpenGL ES -> Vulkan/D3D)")
 else()
-    message(STATUS "  ANGLE:      Disabled")
+    message(STATUS "  ANGLE:      Disabled (use -DUSE_ANGLE=ON to enable)")
 endif()
 message(STATUS "")
 message(STATUS "Renderers:")
