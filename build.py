@@ -375,8 +375,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     
     gn_args = [
         f'target_cpu="{target_cpu}"',
-        'cc="clang"',
-        'cxx="clang++"',
         f'is_debug={"true" if build_type == "Debug" else "false"}',
         'is_component_build=false',
         'angle_build_all=false',  # Don't build tests/samples
