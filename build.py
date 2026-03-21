@@ -285,16 +285,25 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
                 depot_tools: Path, target_cpu: str, sccache: str = None,
                 skip_angle: bool = False) -> bool:
     """Build ANGLE with GN + Ninja -> deps/angle/out/{Debug,Release}/"""
-    if skip_angle:
-        print("\n[ANGLE] Skipped (--skip-angle)")
-        return True
-    
     print("\n[ANGLE]")
     
     if not angle_dir.exists():
         print(f"  ERROR: ANGLE source not found: {angle_dir}")
         print("  Run: python sync.py")
         return False
+    
+    # Check if ANGLE is already built
+    out_dir = angle_dir / "out" / build_type
+    lib_ext = ".lib" if platform.system() == "Windows" else ".a"
+    egl_lib = out_dir / f"libEGL{lib_ext}"
+    gles_lib = out_dir / f"libGLESv2{lib_ext}"
+    
+    if skip_angle:
+        if egl_lib.exists() and gles_lib.exists():
+            print(f"  Skipping build (--skip-angle), using existing: {out_dir}")
+            return True
+        else:
+            print("  WARNING: --skip-angle set but ANGLE not built, building anyway...")
     
     # Find tools
     gn = find_gn(depot_tools)
@@ -386,8 +395,7 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     return True
 
 def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
-               depot_tools: Path, target_cpu: str, sccache: str = None,
-               use_angle: bool = True) -> bool:
+               depot_tools: Path, target_cpu: str, sccache: str = None) -> bool:
     """Build Skia with GN + Ninja -> deps/skia/out/{Debug,Release}/"""
     print("\n[Skia]")
     
@@ -437,12 +445,8 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     is_windows = platform.system() == "Windows"
     crt_flag = "/MTd" if build_type == "Debug" else "/MT"
     
-    # ANGLE usage - controlled by --skip-angle
-    skia_use_angle = "true" if use_angle else "false"
-    if use_angle:
-        print("  Using external ANGLE (Skia will use ANGLE)")
-    else:
-        print("  ANGLE disabled (using native OpenGL)")
+    # ANGLE is required - always use ANGLE
+    print("  Using external ANGLE (Skia will use ANGLE)")
     
     gn_args = [
         f'target_cpu="{target_cpu}"',
@@ -456,7 +460,7 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         'skia_use_gl=true',
         'skia_enable_pdf=true',
         'skia_enable_precompile=true',
-        f'skia_use_angle={skia_use_angle}',
+        'skia_use_angle=true',  # Always use ANGLE
         'skia_use_freetype=true',
         'skia_use_expat=true',
         'skia_use_zlib=true',
@@ -756,7 +760,7 @@ Directory Structure:
         
         if not args.skip_skia:
             build_skia(deps_dir / "skia", args.build_type, llvm_path, depot_tools, 
-                      args.target_cpu, sccache, use_angle=not args.skip_angle)
+                      args.target_cpu, sccache)
     
     # Build main project
     if not args.skip_main:

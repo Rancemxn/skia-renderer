@@ -565,23 +565,19 @@ def sync_deps(args):
             print("  [OK] CLI11")
         print()
     
-    # 5. ANGLE (can be skipped with --skip-angle)
-    if not args.skip_angle:
-        print("=" * 50)
-        print("[5/6] ANGLE")
-        print("=" * 50)
-        
-        angle_dir = deps_dir / "angle"
-        
-        if angle_dir.exists() and not overwrite:
-            print("  ANGLE already exists, skipping")
-        else:
-            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT)
-            print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
-        print()
+    # 5. ANGLE (required dependency)
+    print("=" * 50)
+    print("[5/6] ANGLE")
+    print("=" * 50)
+    
+    angle_dir = deps_dir / "angle"
+    
+    if angle_dir.exists() and not overwrite:
+        print("  ANGLE already exists, skipping")
     else:
-        print("[5/6] ANGLE - Skipped (--skip-angle)")
-        print()
+        git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT)
+        print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
+    print()
     
     # 6. Skia
     if not args.skip_skia:
@@ -669,7 +665,6 @@ def main():
     parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
     parser.add_argument("--skip-spdlog", action="store_true", help="Skip spdlog")
     parser.add_argument("--skip-cli11", action="store_true", help="Skip CLI11")
-    parser.add_argument("--skip-angle", action="store_true", help="Skip ANGLE")
     parser.add_argument("--no-overwrite", action="store_true", help="Don't overwrite existing")
     
     # Download options
