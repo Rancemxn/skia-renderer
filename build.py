@@ -599,9 +599,6 @@ def build_main_project(script_dir: Path, build_type: str,
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     ]
     
-    # ANGLE is required - always enable
-    cmd.append("-DUSE_ANGLE=ON")
-    
     if sccache:
         cmd.extend([
             f"-DCMAKE_C_COMPILER_LAUNCHER={sccache}",
