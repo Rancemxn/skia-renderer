@@ -575,11 +575,41 @@ def sync_deps(args):
         print("=" * 50)
         
         angle_dir = deps_dir / "angle"
+        depot_dir = deps_dir / "depot_tools"
+        
+        # Ensure depot_tools exists (needed for gclient)
+        if not depot_dir.exists():
+            depot_url = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
+            git_clone(depot_url, depot_dir)
+        else:
+            print(f"  depot_tools already exists: {depot_dir}")
         
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping")
         else:
             git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT)
+            
+            # Run gclient sync to get ANGLE dependencies
+            print("  Running gclient sync for ANGLE dependencies...")
+            env = os.environ.copy()
+            env["PATH"] = str(depot_dir) + os.pathsep + env.get("PATH", "")
+            env["DEPOT_TOOLS_UPDATE"] = "0"
+            env["GCLIENT_PY3"] = "1"
+            if platform.system() == "Windows":
+                env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
+            
+            if platform.system() == "Windows":
+                gclient = depot_dir / "gclient.bat"
+            else:
+                gclient = depot_dir / "gclient"
+            
+            if gclient.exists():
+                try:
+                    run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
+                           cwd=str(angle_dir), env=env, check=False)
+                except Exception as e:
+                    print(f"  Warning: gclient sync error: {e}")
+            
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
         print()
     else:
