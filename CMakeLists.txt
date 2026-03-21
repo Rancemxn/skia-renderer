@@ -38,7 +38,7 @@ endif()
 set(DEPS_DIR "${CMAKE_SOURCE_DIR}/deps")
 
 # ========================================
-# Vulkan SDK (REQUIRED)
+# Vulkan SDK
 # ========================================
 if(DEFINED VULKAN_SDK AND NOT DEFINED Vulkan_SDK)
     set(Vulkan_SDK ${VULKAN_SDK})
@@ -47,10 +47,11 @@ find_package(Vulkan REQUIRED)
 message(STATUS "Vulkan SDK: ${Vulkan_SDK}")
 
 # ========================================
-# OpenGL (REQUIRED)
+# OpenGL
 # ========================================
 find_package(OpenGL REQUIRED)
-message(STATUS "OpenGL: Available")
+message(STATUS "OpenGL Library: ${OPENGL_LIBRARIES}")
+message(STATUS "OpenGL Include Dir: ${OPENGL_INCLUDE_DIR}")
 
 # ========================================
 # SDL3
@@ -114,7 +115,7 @@ else()
     if(NOT SDL3_CONFIG_PATH)
         if(VERBOSE_DEPS)
             message(STATUS "    SDL3Config.cmake not found in any standard location")
-            message(STATUS "  Checking for SDL3.dll and SDL3.lib (fallback detection):")
+            message(STATUS "  Checking for SDL3.dll and SDL3.lib:")
         endif()
         
         # Check for built artifacts
@@ -188,7 +189,7 @@ elseif(SDL3_INCLUDE_DIR)
 else()
     # Try to find include directory manually
     if(VERBOSE_DEPS)
-        message(STATUS "    SDL3_INCLUDE_DIRS: (empty, searching...)")
+        message(STATUS "    SDL3_INCLUDE_DIRS: (empty)")
     endif()
     
     # SDL3 include directories - check multiple locations
@@ -209,7 +210,7 @@ else()
         endif()
         set(SDL3_INCLUDE_DIRS "${SDL3_INCLUDE_DIR}")
     else()
-        message(WARNING "    SDL3 include directory not found!")
+        message(WARNING "    SDL3 include directory not found")
     endif()
 endif()
 
@@ -253,7 +254,7 @@ else()
     set(VKB_SOURCE "${DEPS_DIR}/vk-bootstrap")
     
     if(VERBOSE_DEPS)
-        message(STATUS "  VKBOOTSTRAP_DIR (from cmdline): \"${VKBOOTSTRAP_DIR}\"")
+        message(STATUS "  VKBOOTSTRAP_DIR: \"${VKBOOTSTRAP_DIR}\"")
         message(STATUS "  VKB_OUT_DIR: ${VKB_OUT_DIR}")
     endif()
     
@@ -339,7 +340,7 @@ endif()
 
 # Verify vk-bootstrap was found
 if(NOT VK_BOOTSTRAP_INCLUDE_DIR OR NOT VK_BOOTSTRAP_LIBRARY)
-    message(FATAL_ERROR "vk-bootstrap not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
+    message(FATAL_ERROR "vk-bootstrap not found")
 endif()
 
 # Results
@@ -445,11 +446,11 @@ if(VERBOSE_DEPS)
     if(SKIA_LIBRARY)
         message(STATUS "    SKIA_LIBRARY: ${SKIA_LIBRARY}")
     else()
-        message(FATAL_ERROR "    SKIA_LIBRARY: Not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
+        message(FATAL_ERROR "    SKIA_LIBRARY: Not found")
     endif()
     message(STATUS "")
 elseif(NOT SKIA_LIBRARY)
-    message(FATAL_ERROR "Skia library not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
+    message(FATAL_ERROR "Skia library not found")
 endif()
 
 # ========================================
@@ -467,7 +468,7 @@ if(USE_SYSTEM_SPDLOG)
     find_package(spdlog REQUIRED)
 else()
     if(VERBOSE_DEPS)
-        message(STATUS "  Mode: Local build (header-only)")
+        message(STATUS "  Mode: Local build")
     endif()
     
     set(SPDLOG_DIR "${SPDLOG_DIR}" CACHE PATH "spdlog directory")
@@ -492,7 +493,7 @@ else()
     endif()
     
     if(NOT EXISTS "${SPDLOG_INCLUDE_DIR}/spdlog/spdlog.h")
-        message(FATAL_ERROR "spdlog not found. Run: python sync.py")
+        message(FATAL_ERROR "spdlog not found")
     endif()
 endif()
 
@@ -519,7 +520,7 @@ if(USE_SYSTEM_CLI11)
     find_path(CLI11_INCLUDE_DIR NAMES CLI/CLI.hpp)
 else()
     if(VERBOSE_DEPS)
-        message(STATUS "  Mode: Local build (header-only)")
+        message(STATUS "  Mode: Local build")
     endif()
     
     set(CLI11_DIR "${CLI11_DIR}" CACHE PATH "CLI11 directory")
@@ -671,14 +672,14 @@ if(NOT ANGLE_EGL_FOUND)
     if(VERBOSE_DEPS)
         message(STATUS "    EGL library not found")
     endif()
-    message(FATAL_ERROR "ANGLE EGL library not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
+    message(FATAL_ERROR "ANGLE EGL library not found")
 endif()
 
 if(NOT ANGLE_GLES_FOUND)
     if(VERBOSE_DEPS)
         message(STATUS "    GLESv2 library not found")
     endif()
-    message(FATAL_ERROR "ANGLE GLESv2 library not found! Run: python build.py --build-type ${CMAKE_BUILD_TYPE}")
+    message(FATAL_ERROR "ANGLE GLESv2 library not found")
 endif()
 
 # Results
@@ -701,11 +702,11 @@ add_executable(${PROJECT_NAME}
     src/renderer/GLContext.cpp
     src/renderer/GLRenderer.cpp
     src/renderer/RendererFactory.cpp
-    # Vulkan backend files (required)
+    # Vulkan backend files
     src/renderer/VulkanContext.cpp
     src/renderer/SkiaRenderer.cpp
     src/renderer/Swapchain.cpp
-    # ANGLE backend files (conditional)
+    # ANGLE backend files
     src/renderer/AngleContext.cpp
     src/renderer/AngleRenderer.cpp
 )
@@ -724,7 +725,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CLI11_INCLUDE_DIR}
     ${Vulkan_INCLUDE_DIRS}
     ${VK_BOOTSTRAP_INCLUDE_DIR}
-    # ANGLE include directories (required)
+    # ANGLE include directories
     ${ANGLE_INCLUDE_DIR}
     ${ANGLE_INCLUDE_DIR}/EGL
     ${ANGLE_INCLUDE_DIR}/GLES2
@@ -740,7 +741,7 @@ set(LINK_LIBS
     ${SKIA_LIBRARY}
     Vulkan::Vulkan
     ${VK_BOOTSTRAP_LIBRARY}
-    # ANGLE libraries (required)
+    # ANGLE libraries
     ${ANGLE_EGL_LIBRARY}
     ${ANGLE_GLES_LIBRARY}
 )
@@ -834,8 +835,8 @@ message(STATUS "Output:       ${CMAKE_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}")
 message(STATUS "")
 message(STATUS "Graphics APIs:")
 message(STATUS "  Vulkan:     ${Vulkan_SDK}")
-message(STATUS "  OpenGL:     Available")
-message(STATUS "  ANGLE:      Enabled (OpenGL ES -> Vulkan/D3D)")
+message(STATUS "  OpenGL:     ${OPENGL_LIBRARIES}")
+message(STATUS "  ANGLE:      Enabled")
 message(STATUS "")
 message(STATUS "Renderers:")
 message(STATUS "  Vulkan:     Skia Graphite")

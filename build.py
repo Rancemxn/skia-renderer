@@ -164,8 +164,6 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
         cmd, 
         cwd=cwd, 
         env=merged_env,
-        # On Windows, create new process group for clean termination
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if platform.system() == "Windows" else 0
     )
     _running_processes.append(proc)
     
@@ -177,7 +175,12 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
             raise subprocess.CalledProcessError(result, cmd)
         return subprocess.CompletedProcess(cmd, result)
     except KeyboardInterrupt:
-        # Let signal handler deal with it
+        print(f"\nInterrupted")
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
         raise
 
 def remove_readonly(func, path, _):
