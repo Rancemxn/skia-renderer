@@ -412,7 +412,10 @@ def git_clone_at_commit(url: str, target_dir: Path, commit: str, depth: int = 1)
     
     # Fetch the specific commit
     print(f"  Fetching commit: {commit[:8]}")
-    cmd = [git, "fetch", "--depth", "1", "origin", commit]
+    if depth:
+        cmd = [git, "fetch", "--depth", "1", "origin", commit]
+    else:
+        cmd = [git, "fetch", "origin", commit]
     run_cmd(cmd, cwd=str(target_dir))
     
     # Checkout the commit
@@ -420,6 +423,26 @@ def git_clone_at_commit(url: str, target_dir: Path, commit: str, depth: int = 1)
     run_cmd(cmd, cwd=str(target_dir))
     
     return target_dir
+
+def setup_angle_gclient(angle_dir: Path, commit: str) -> None:
+    """Create .gclient file for ANGLE and run gclient sync"""
+    gclient_file = angle_dir.parent / ".gclient"
+    
+    gclient_content = f'''solutions = [
+  {{
+    "name": "angle",
+    "url": "https://github.com/google/angle.git@{commit}",
+    "deps_file": "DEPS",
+    "managed": False,
+    "custom_deps": {{}},
+  }},
+]
+'''
+    
+    with open(gclient_file, 'w') as f:
+        f.write(gclient_content)
+    
+    print(f"  Created .gclient config")
 
 # ========================================
 # Main
@@ -587,7 +610,12 @@ def sync_deps(args):
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping")
         else:
-            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT)
+            # ANGLE needs full clone for gclient sync to work properly
+            # depth=0 means full clone
+            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT, depth=0)
+            
+            # Setup gclient configuration
+            setup_angle_gclient(angle_dir, ANGLE_COMMIT)
             
             # Run gclient sync to get ANGLE dependencies
             print("  Running gclient sync for ANGLE dependencies...")
@@ -605,8 +633,9 @@ def sync_deps(args):
             
             if gclient.exists():
                 try:
+                    # Run gclient sync from deps_dir (where .gclient is located)
                     run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
-                           cwd=str(angle_dir), env=env, check=False)
+                           cwd=str(deps_dir), env=env, check=False)
                 except Exception as e:
                     print(f"  Warning: gclient sync error: {e}")
             

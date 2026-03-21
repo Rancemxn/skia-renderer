@@ -340,9 +340,28 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
         print("  Running gclient sync for ANGLE dependencies...")
         gclient = find_gclient(depot_tools)
         if gclient:
+            # Check if .gclient exists in deps_dir
+            gclient_file = angle_dir.parent / ".gclient"
+            if not gclient_file.exists():
+                # Create .gclient config
+                gclient_content = f'''solutions = [
+  {{
+    "name": "angle",
+    "url": "https://github.com/google/angle.git",
+    "deps_file": "DEPS",
+    "managed": False,
+    "custom_deps": {{}},
+  }},
+]
+'''
+                with open(gclient_file, 'w') as f:
+                    f.write(gclient_content)
+                print("  Created .gclient config")
+            
             try:
+                # Run gclient sync from deps_dir (where .gclient is located)
                 run_cmd([gclient, "sync", "--with_branch_heads", "--with_tags"],
-                       cwd=str(angle_dir), env=env, check=False)
+                       cwd=str(angle_dir.parent), env=env, check=False)
             except Exception as e:
                 print(f"  Warning: gclient sync error: {e}")
                 print("  Continuing with build...")
