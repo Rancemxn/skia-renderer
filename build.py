@@ -326,9 +326,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     if platform.system() == "Windows":
         env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
     
-    if sccache:
-        env["SCCACHE_DIR"] = str(angle_dir / ".sccache")
-    
     # Check if we need to run gclient sync
     # ANGLE requires third_party dependencies and build config files
     third_party = angle_dir / "third_party"
@@ -367,7 +364,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
                 print("  Continuing with build...")
         else:
             print("  Warning: gclient not found, skipping dependency sync")
-            print("  Note: ANGLE requires full clone with gclient sync for first build")
     
     # GN args
     is_windows = platform.system() == "Windows"
@@ -408,7 +404,6 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     
     if not skia_dir.exists():
         print(f"  ERROR: Skia source not found: {skia_dir}")
-        print("  Run: python sync.py")
         return False
     
     # Find tools
@@ -445,8 +440,6 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     # Setup environment
     env = os.environ.copy()
     env["PATH"] = str(depot_tools) + os.pathsep + env.get("PATH", "")
-    if sccache:
-        env["SCCACHE_DIR"] = str(skia_dir / ".sccache")
     
     # GN args
     is_windows = platform.system() == "Windows"
@@ -564,7 +557,6 @@ def build_main_project(script_dir: Path, build_type: str,
         sdl3_built, sdl3_config_dir = check_sdl3_built(sdl3_out_dir)
         if not sdl3_built:
             print(f"  WARNING: SDL3 not found at {sdl3_out_dir}")
-            print(f"  Run: python build.py --build-type {build_type} (without --skip-deps)")
         else:
             print(f"  SDL3 found: {sdl3_config_dir}")
         
@@ -738,7 +730,7 @@ Directory Structure:
     if sccache:
         print(f"  sccache: {sccache}")
     else:
-        print("  sccache: not found (optional)")
+        print("  sccache: not found")
     
     print()
     
@@ -781,7 +773,7 @@ Directory Structure:
     # Summary
     print()
     print("=" * 60)
-    print("Build Complete!")
+    print("Build Complete")
     print("=" * 60)
     
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
@@ -789,7 +781,6 @@ Directory Structure:
     
     if exe_path.exists():
         print(f"Executable: {exe_path}")
-        print(f"\nRun: {exe_path}")
     
     print()
     return 0

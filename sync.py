@@ -24,7 +24,6 @@ SPDLOG_VERSION = "1.17.0"
 CLI11_VERSION = "2.6.2"
 
 # ANGLE configuration
-# Using specific commit from main branch
 ANGLE_COMMIT = "ae66dc5ad3506d3ea7196da4dba54a7b1f8b4f8c"
 ANGLE_REPO_URL = "https://github.com/google/angle.git"
 
@@ -695,7 +694,7 @@ def sync_deps(args):
     
     # Summary
     print("=" * 50)
-    print("Dependency Sync Complete!")
+    print("Dependency Sync Complete")
     print("=" * 50)
     print()
     print("Dependencies downloaded:")
@@ -703,23 +702,6 @@ def sync_deps(args):
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
-    print("Directory structure:")
-    print("  deps/SDL3/              - SDL3 source")
-    print("  deps/vk-bootstrap/      - vk-bootstrap source")
-    print("  deps/spdlog/            - spdlog source (header-only)")
-    print("  deps/CLI11/             - CLI11 source (header-only)")
-    print("  deps/angle/             - ANGLE source (OpenGL ES -> Vulkan/D3D translator)")
-    print("  deps/skia/              - Skia source")
-    print()
-    print("Build outputs will be in:")
-    print("  deps/*/out/{Debug,Release}/")
-    print("  build/{Debug,Release}/")
-    print()
-    print("Next:")
-    print("  python build.py --build-type Release")
-    print("  python build.py --build-type Debug")
-    print()
-    
     return 0
 
 def main():
