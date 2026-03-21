@@ -392,7 +392,7 @@ def git_clone(url: str, target_dir: Path, depth: int = 1, branch: str = None) ->
     
     return target_dir
 
-def git_clone_at_commit(url: str, target_dir: Path, commit: str) -> Path:
+def git_clone_at_commit(url: str, target_dir: Path, commit: str, depth: int = 1) -> Path:
     """Clone a git repository at a specific commit"""
     git = find_tool("git")
     if not git:
@@ -402,14 +402,17 @@ def git_clone_at_commit(url: str, target_dir: Path, commit: str) -> Path:
         print(f"  Removing existing: {target_dir}")
         shutil.rmtree(target_dir)
     
-    # Clone with minimal depth, then fetch the specific commit
+    # Clone with depth=1 for shallow clone, then fetch the specific commit
     print(f"  Cloning: {url}")
-    cmd = [git, "clone", "--no-checkout", url, str(target_dir)]
+    cmd = [git, "clone", "--no-checkout"]
+    if depth:
+        cmd.extend(["--depth", str(depth)])
+    cmd.extend([url, str(target_dir)])
     run_cmd(cmd)
     
     # Fetch the specific commit
     print(f"  Fetching commit: {commit[:8]}")
-    cmd = [git, "fetch", "origin", commit]
+    cmd = [git, "fetch", "--depth", "1", "origin", commit]
     run_cmd(cmd, cwd=str(target_dir))
     
     # Checkout the commit
@@ -607,7 +610,7 @@ def sync_deps(args):
                 shutil.rmtree(skia_dir)
             
             skia_url = "https://skia.googlesource.com/skia.git"
-            git_clone(skia_url, skia_dir)
+            git_clone(skia_url, skia_dir, branch="chrome/m147")
         
         # Sync dependencies
         print("  Syncing Skia dependencies...")
