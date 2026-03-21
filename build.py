@@ -330,9 +330,13 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
         env["SCCACHE_DIR"] = str(angle_dir / ".sccache")
     
     # Check if we need to run gclient sync
-    # ANGLE requires third_party dependencies
+    # ANGLE requires third_party dependencies and build config files
     third_party = angle_dir / "third_party"
-    if not (third_party / "zlib").exists():
+    dotfile_settings = angle_dir / "build" / "dotfile_settings.gni"
+    
+    need_gclient_sync = not (third_party / "zlib").exists() or not dotfile_settings.exists()
+    
+    if need_gclient_sync:
         print("  Running gclient sync for ANGLE dependencies...")
         gclient = find_gclient(depot_tools)
         if gclient:
@@ -344,6 +348,7 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
                 print("  Continuing with build...")
         else:
             print("  Warning: gclient not found, skipping dependency sync")
+            print("  Note: ANGLE requires full clone with gclient sync for first build")
     
     # GN args
     is_windows = platform.system() == "Windows"
