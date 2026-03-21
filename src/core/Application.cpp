@@ -3,6 +3,8 @@
 #include "renderer/GLRenderer.h"
 #include "renderer/RendererFactory.h"
 
+#include "renderer/AngleRenderer.h"
+
 #ifdef VULKAN_BACKEND_ENABLED
 #include "renderer/VulkanContext.h"
 #include "renderer/SkiaRenderer.h"
@@ -88,13 +90,17 @@ bool Application::initialize() {
         LOG_INFO("Creating window with OpenGL support");
     }
 #else
-    // Only OpenGL is available
+    // Only OpenGL/ANGLE is available
     if (m_impl->backendConfig.type == BackendType::Vulkan) {
         LOG_WARN("Vulkan backend requested but not available, falling back to OpenGL");
         m_impl->backendConfig.type = BackendType::OpenGL;
     }
     windowFlags = static_cast<SDL_WindowFlags>(windowFlags | SDL_WINDOW_OPENGL);
-    LOG_INFO("Creating window with OpenGL support");
+    if (m_impl->backendConfig.type == BackendType::ANGLE) {
+        LOG_INFO("Creating window with ANGLE (OpenGL ES) support");
+    } else {
+        LOG_INFO("Creating window with OpenGL support");
+    }
 #endif
 
     m_impl->window = SDL_CreateWindow(
@@ -123,6 +129,9 @@ bool Application::initialize() {
             break;
         case BackendType::OpenGL:
             success = initializeOpenGLBackend();
+            break;
+        case BackendType::ANGLE:
+            success = initializeANGLEBackend();
             break;
     }
 
@@ -204,6 +213,31 @@ bool Application::initializeOpenGLBackend() {
     
     return true;
 }
+
+ 
+bool Application::initializeANGLEBackend() {
+#ifdef USE_ANGLE
+    LOG_INFO("Initializing ANGLE backend...");
+    
+    // Create renderer using factory
+    m_impl->renderer = RendererFactory::create(BackendType::ANGLE);
+    
+    if (!m_impl->renderer->initialize(
+        m_impl->window,
+        m_impl->width,
+        m_impl->height,
+        m_impl->backendConfig)) {
+        LOG_ERROR("Failed to initialize ANGLE renderer");
+        return false;
+    }
+    
+    return true;
+#else
+    LOG_ERROR("ANGLE backend not available. Build with -DUSE_ANGLE=ON");
+    return false;
+#endif
+}
+
 
 void Application::run() {
     if (!m_impl->initialized) {

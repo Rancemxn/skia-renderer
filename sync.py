@@ -1,6 +1,6 @@
 """
 Skia Renderer - Dependency Sync Script
-Downloads SDL3, vk-bootstrap, Skia
+Downloads SDL3, vk-bootstrap, Skia, ANGLE
 
 Supported tools:
   - aria2c (preferred) or curl for downloads
@@ -22,6 +22,11 @@ SDL3_VERSION = "3.4.2"
 VKBOOTSTRAP_VERSION = "1.4.343"
 SPDLOG_VERSION = "1.17.0"
 CLI11_VERSION = "2.6.2"
+
+# ANGLE configuration
+# Using specific commit from main branch
+ANGLE_COMMIT = "ae66dc5ad3506d3ea7196da4dba54a7b1f8b4f8c"
+ANGLE_REPO_URL = "https://github.com/google/angle.git"
 
 def find_tool(name: str, extra_paths: list = None) -> str:
     """Find a tool in PATH or specified paths"""
@@ -387,6 +392,32 @@ def git_clone(url: str, target_dir: Path, depth: int = 1, branch: str = None) ->
     
     return target_dir
 
+def git_clone_at_commit(url: str, target_dir: Path, commit: str) -> Path:
+    """Clone a git repository at a specific commit"""
+    git = find_tool("git")
+    if not git:
+        raise RuntimeError("git not found")
+    
+    if target_dir.exists():
+        print(f"  Removing existing: {target_dir}")
+        shutil.rmtree(target_dir)
+    
+    # Clone with minimal depth, then fetch the specific commit
+    print(f"  Cloning: {url}")
+    cmd = [git, "clone", "--no-checkout", url, str(target_dir)]
+    run_cmd(cmd)
+    
+    # Fetch the specific commit
+    print(f"  Fetching commit: {commit[:8]}")
+    cmd = [git, "fetch", "origin", commit]
+    run_cmd(cmd, cwd=str(target_dir))
+    
+    # Checkout the commit
+    cmd = [git, "checkout", commit]
+    run_cmd(cmd, cwd=str(target_dir))
+    
+    return target_dir
+
 # ========================================
 # Main
 # ========================================
@@ -452,7 +483,7 @@ def sync_deps(args):
     # 1. SDL3
     if not args.skip_sdl:
         print("=" * 50)
-        print("[1/5] SDL3")
+        print("[1/6] SDL3")
         print("=" * 50)
         
         sdl_dir = deps_dir / "SDL3"
@@ -474,7 +505,7 @@ def sync_deps(args):
     # 2. vk-bootstrap
     if not args.skip_vkbootstrap:
         print("=" * 50)
-        print("[2/5] vk-bootstrap")
+        print("[2/6] vk-bootstrap")
         print("=" * 50)
         
         vkb_dir = deps_dir / "vk-bootstrap"
@@ -495,7 +526,7 @@ def sync_deps(args):
     # 3. spdlog (header-only library)
     if not args.skip_spdlog:
         print("=" * 50)
-        print("[3/5] spdlog")
+        print("[3/6] spdlog")
         print("=" * 50)
         
         spdlog_dir = deps_dir / "spdlog"
@@ -516,7 +547,7 @@ def sync_deps(args):
     # 4. CLI11 (header-only library)
     if not args.skip_cli11:
         print("=" * 50)
-        print("[4/5] CLI11")
+        print("[4/6] CLI11")
         print("=" * 50)
         
         cli11_dir = deps_dir / "CLI11"
@@ -534,10 +565,25 @@ def sync_deps(args):
             print("  [OK] CLI11")
         print()
     
-    # 5. Skia
+    # 5. ANGLE
+    if not args.skip_angle:
+        print("=" * 50)
+        print("[5/6] ANGLE")
+        print("=" * 50)
+        
+        angle_dir = deps_dir / "angle"
+        
+        if angle_dir.exists() and not overwrite:
+            print("  ANGLE already exists, skipping")
+        else:
+            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT)
+            print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
+        print()
+    
+    # 6. Skia
     if not args.skip_skia:
         print("=" * 50)
-        print("[5/5] Skia")
+        print("[6/6] Skia")
         print("=" * 50)
         
         skia_dir = deps_dir / "skia"
@@ -588,7 +634,7 @@ def sync_deps(args):
     print("=" * 50)
     print()
     print("Dependencies downloaded:")
-    for name in ["SDL3", "vk-bootstrap", "spdlog", "CLI11", "skia", "depot_tools"]:
+    for name in ["SDL3", "vk-bootstrap", "spdlog", "CLI11", "angle", "skia", "depot_tools"]:
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
@@ -597,6 +643,7 @@ def sync_deps(args):
     print("  deps/vk-bootstrap/      - vk-bootstrap source")
     print("  deps/spdlog/            - spdlog source (header-only)")
     print("  deps/CLI11/             - CLI11 source (header-only)")
+    print("  deps/angle/             - ANGLE source (OpenGL ES -> Vulkan/D3D translator)")
     print("  deps/skia/              - Skia source")
     print()
     print("Build outputs will be in:")
@@ -619,6 +666,7 @@ def main():
     parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
     parser.add_argument("--skip-spdlog", action="store_true", help="Skip spdlog")
     parser.add_argument("--skip-cli11", action="store_true", help="Skip CLI11")
+    parser.add_argument("--skip-angle", action="store_true", help="Skip ANGLE")
     parser.add_argument("--no-overwrite", action="store_true", help="Don't overwrite existing")
     
     # Download options

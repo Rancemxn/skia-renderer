@@ -6,6 +6,7 @@ Directory Structure:
   deps/                           - Source + build outputs
     ├── SDL3/out/{Debug,Release}/
     ├── vk-bootstrap/out/{Debug,Release}/
+    ├── angle/out/{Debug,Release}/
     ├── skia/out/{Debug,Release}/
     └── depot_tools/
 
@@ -134,6 +135,17 @@ def find_gn(depot_tools: Path) -> str:
     """Find gn executable"""
     gn = find_tool("gn", [str(depot_tools)])
     return gn
+
+def find_gclient(depot_tools: Path) -> str:
+    """Find gclient executable"""
+    if platform.system() == "Windows":
+        gclient = depot_tools / "gclient.bat"
+    else:
+        gclient = depot_tools / "gclient"
+    
+    if gclient.exists():
+        return str(gclient)
+    return None
 
 # ========================================
 # Utility Functions
@@ -269,8 +281,113 @@ def build_vkbootstrap(source_dir: Path, build_type: str,
     print(f"  Output: {build_dir}")
     return True
 
+def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
+                depot_tools: Path, target_cpu: str, sccache: str = None,
+                with_angle: bool = True) -> bool:
+    """Build ANGLE with GN + Ninja -> deps/angle/out/{Debug,Release}/"""
+    if not with_angle:
+        print("\n[ANGLE] Skipped (--without-angle)")
+        return True
+    
+    print("\n[ANGLE]")
+    
+    if not angle_dir.exists():
+        print(f"  ERROR: ANGLE source not found: {angle_dir}")
+        print("  Run: python sync.py")
+        return False
+    
+    # Find tools
+    gn = find_gn(depot_tools)
+    if not gn:
+        print("  ERROR: gn not found in depot_tools")
+        return False
+    
+    ninja = find_ninja(depot_tools)
+    if not ninja:
+        print("  ERROR: ninja not found")
+        return False
+    
+    # Setup environment
+    env = os.environ.copy()
+    env["PATH"] = str(depot_tools) + os.pathsep + env.get("PATH", "")
+    env["DEPOT_TOOLS_UPDATE"] = "0"
+    env["GCLIENT_PY3"] = "1"
+    
+    # On Windows, disable toolchain download
+    if platform.system() == "Windows":
+        env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
+    
+    if sccache:
+        env["SCCACHE_DIR"] = str(angle_dir / ".sccache")
+    
+    # Check if we need to run gclient sync
+    # ANGLE requires third_party dependencies
+    third_party = angle_dir / "third_party"
+    if not (third_party / "zlib").exists():
+        print("  Running gclient sync for ANGLE dependencies...")
+        gclient = find_gclient(depot_tools)
+        if gclient:
+            try:
+                run_cmd([gclient, "sync", "--with_branch_heads", "--with_tags"],
+                       cwd=str(angle_dir), env=env, check=False)
+            except Exception as e:
+                print(f"  Warning: gclient sync error: {e}")
+                print("  Continuing with build...")
+        else:
+            print("  Warning: gclient not found, skipping dependency sync")
+    
+    # GN args
+    is_windows = platform.system() == "Windows"
+    crt_flag = "/MTd" if build_type == "Debug" else "/MT"
+    
+    gn_args = [
+        f'target_cpu="{target_cpu}"',
+        'cc="clang"',
+        'cxx="clang++"',
+        f'is_debug={"true" if build_type == "Debug" else "false"}',
+        'is_component_build=false',
+        'angle_build_all=false',  # Don't build tests/samples
+        'angle_enable_vulkan=true',
+        'angle_enable_gl=true',
+        'angle_enable_d3d11=true',
+        'angle_enable_d3d9=false',
+        'angle_has_build=false',  # Standalone build without Chromium build system
+        'angle_standalone=true',
+        # Use bundled dependencies where possible
+        'angle_use_custom_libcxx=false',
+    ]
+    
+    if is_windows:
+        gn_args.extend([
+            f'clang_win="{llvm_path}"',
+            f'extra_cflags=["{crt_flag}"]',
+            f'extra_cflags_cc=["/GR", "/EHsc", "{crt_flag}"]',
+        ])
+    else:
+        gn_args.extend([
+            'extra_cflags_cc=["-frtti", "-fexceptions"]',
+        ])
+    
+    if sccache:
+        gn_args.append(f'cc_wrapper="{sccache}"')
+    
+    gn_args_str = " ".join(gn_args)
+    
+    # Build directory: deps/angle/out/{Debug,Release}
+    out_dir = f"out/{build_type}"
+    
+    print("  Configuring...")
+    run_cmd([gn, "gen", out_dir, f"--args={gn_args_str}"], cwd=str(angle_dir), env=env)
+    
+    print("  Building...")
+    run_cmd([ninja, "-C", out_dir, "libEGL", "libGLESv2"], cwd=str(angle_dir), env=env)
+    
+    print(f"  Output: {angle_dir / out_dir}")
+    return True
+
 def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
-               depot_tools: Path, target_cpu: str, sccache: str = None) -> bool:
+               depot_tools: Path, target_cpu: str, sccache: str = None,
+               use_external_angle: bool = False) -> bool:
     """Build Skia with GN + Ninja -> deps/skia/out/{Debug,Release}/"""
     print("\n[Skia]")
     
@@ -320,6 +437,16 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     is_windows = platform.system() == "Windows"
     crt_flag = "/MTd" if build_type == "Debug" else "/MT"
     
+    # IMPORTANT: Always disable Skia's built-in ANGLE when using external ANGLE
+    # When use_external_angle=True: we build external ANGLE separately
+    # When use_external_angle=False: we don't build any ANGLE (neither external nor built-in)
+    # This avoids conflicts and ensures consistent behavior
+    skia_use_angle = "false"
+    if use_external_angle:
+        print("  Using external ANGLE (Skia's built-in ANGLE disabled)")
+    else:
+        print("  ANGLE disabled (using native OpenGL)")
+    
     gn_args = [
         f'target_cpu="{target_cpu}"',
         'cc="clang"', 'cxx="clang++"',
@@ -332,7 +459,7 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         'skia_use_gl=true',
         'skia_enable_pdf=true',
         'skia_enable_precompile=true',
-        'skia_use_angle=true',
+        f'skia_use_angle={skia_use_angle}',  # Controlled by external ANGLE usage
         'skia_use_freetype=true',
         'skia_use_expat=true',
         'skia_use_zlib=true',
@@ -471,6 +598,11 @@ def build_main_project(script_dir: Path, build_type: str,
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     ]
     
+    # Add USE_ANGLE option
+    build_angle_enabled = args.with_angle and not args.without_angle
+    if build_angle_enabled:
+        cmd.append("-DUSE_ANGLE=ON")
+    
     if sccache:
         cmd.extend([
             f"-DCMAKE_C_COMPILER_LAUNCHER={sccache}",
@@ -552,11 +684,18 @@ Directory Structure:
     parser.add_argument("--target-cpu", default="x64", help="Target CPU for Skia (default: x64)")
     parser.add_argument("--clean", action="store_true", help="Clean before building")
     
+    # ANGLE options
+    parser.add_argument("--with-angle", action="store_true", default=False,
+                       help="Build with ANGLE support (external dependency)")
+    parser.add_argument("--without-angle", action="store_true", default=False,
+                       help="Disable ANGLE build (if --with-angle was set)")
+    
     # Skip options
     parser.add_argument("--skip-deps", action="store_true", help="Skip building dependencies")
     parser.add_argument("--skip-main", action="store_true", help="Skip building main project")
     parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
     parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
+    parser.add_argument("--skip-angle", action="store_true", help="Skip ANGLE")
     parser.add_argument("--skip-skia", action="store_true", help="Skip Skia")
     
     # Other options
@@ -620,8 +759,17 @@ Directory Structure:
         if not args.skip_vkbootstrap:
             build_vkbootstrap(deps_dir / "vk-bootstrap", args.build_type, clang, clang_pp, sccache)
         
+        # Build ANGLE if --with-angle is specified
+        build_angle_enabled = args.with_angle and not args.without_angle
+        if not args.skip_angle:
+            build_angle(
+                deps_dir / "angle", args.build_type, llvm_path, depot_tools,
+                args.target_cpu, sccache, with_angle=build_angle_enabled
+            )
+        
         if not args.skip_skia:
-            build_skia(deps_dir / "skia", args.build_type, llvm_path, depot_tools, args.target_cpu, sccache)
+            build_skia(deps_dir / "skia", args.build_type, llvm_path, depot_tools, 
+                      args.target_cpu, sccache, use_external_angle=build_angle_enabled)
     
     # Build main project
     if not args.skip_main:

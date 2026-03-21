@@ -87,6 +87,9 @@ skia_renderer::BackendType parseBackend(const std::string& str) {
     if (lower == "opengl" || lower == "gl" || lower == "ganesh") {
         return skia_renderer::BackendType::OpenGL;
     }
+    if (lower == "angle" || lower == "es" || lower == "gles") {
+        return skia_renderer::BackendType::ANGLE;
+    }
     // Default to Vulkan
     return skia_renderer::BackendType::Vulkan;
 }
@@ -112,7 +115,7 @@ int main(int argc, char* argv[]) {
     
     // Backend selection
     app.add_option("-b,--backend", backendStr, 
-                   "Rendering backend: 'vulkan' (Graphite) or 'opengl' (Ganesh)");
+                   "Rendering backend: 'vulkan' (Graphite), 'opengl' (Ganesh), or 'angle' (OpenGL ES via ANGLE)");
     
     // Vulkan-specific options
     app.add_option("--vulkan-version", vulkanVersionStr, 
@@ -131,8 +134,8 @@ int main(int argc, char* argv[]) {
     
     // Handle --version early
     if (show_version) {
-        std::cout << "Skia Renderer v1.1.0" << std::endl;
-        std::cout << "Supported backends: Vulkan (Graphite), OpenGL (Ganesh)" << std::endl;
+        std::cout << "Skia Renderer v1.2.0" << std::endl;
+        std::cout << "Supported backends: Vulkan (Graphite), OpenGL (Ganesh), ANGLE (OpenGL ES)" << std::endl;
         return 0;
     }
     
@@ -155,6 +158,10 @@ int main(int argc, char* argv[]) {
         auto vulkanVersion = parseVulkanVersion(vulkanVersionStr);
         backendConfig.vulkanMajor = vulkanVersion.major;
         backendConfig.vulkanMinor = vulkanVersion.minor;
+    } else if (backendConfig.type == skia_renderer::BackendType::ANGLE) {
+        auto glVersion = parseGLVersion(glVersionStr);
+        backendConfig.angleMajor = glVersion.major;
+        backendConfig.angleMinor = glVersion.minor;
     } else {
         auto glVersion = parseGLVersion(glVersionStr);
         backendConfig.glMajor = glVersion.major;
@@ -164,13 +171,15 @@ int main(int argc, char* argv[]) {
     // ========================================
     // Startup Info
     // ========================================
-    LOG_INFO("Skia Renderer v1.1.0");
+    LOG_INFO("Skia Renderer v1.2.0");
     LOG_INFO("========================");
     LOG_INFO("Window size: {}x{}", width, height);
     LOG_INFO("Backend: {}", backendConfig.toString());
     
     if (backendConfig.type == skia_renderer::BackendType::Vulkan) {
         LOG_INFO("Requested Vulkan version: {}.{}", backendConfig.vulkanMajor, backendConfig.vulkanMinor);
+    } else if (backendConfig.type == skia_renderer::BackendType::ANGLE) {
+        LOG_INFO("Requested ANGLE OpenGL ES version: {}.{}", backendConfig.angleMajor, backendConfig.angleMinor);
     } else {
         LOG_INFO("Requested OpenGL version: {}.{}", backendConfig.glMajor, backendConfig.glMinor);
     }

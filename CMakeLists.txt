@@ -15,6 +15,9 @@ option(USE_SYSTEM_SPDLOG "Use system spdlog" OFF)
 option(USE_SYSTEM_CLI11 "Use system CLI11" OFF)
 option(VERBOSE_DEPS "Show detailed dependency detection info" OFF)
 
+# ANGLE option (disabled by default, must be explicitly enabled with -DUSE_ANGLE=ON)
+option(USE_ANGLE "Enable ANGLE support (OpenGL ES to Vulkan/D3D translation layer)" OFF)
+
 # ========================================
 # Build Type
 # ========================================
@@ -570,6 +573,138 @@ if(NOT WIN32)
 endif()
 
 # ========================================
+# ANGLE (Optional - enabled with -DUSE_ANGLE=ON)
+# ========================================
+if(USE_ANGLE)
+    if(VERBOSE_DEPS)
+        message(STATUS "")
+        message(STATUS "[ANGLE Detection]")
+    endif()
+    
+    # ANGLE build output: deps/angle/out/{Debug,Release}/
+    set(ANGLE_DIR "${ANGLE_DIR}" CACHE PATH "ANGLE directory")
+    if(NOT ANGLE_DIR)
+        set(ANGLE_DIR "${DEPS_DIR}/angle")
+    endif()
+    
+    set(ANGLE_OUT_DIR "${ANGLE_DIR}/out/${CMAKE_BUILD_TYPE}")
+    
+    if(VERBOSE_DEPS)
+        message(STATUS "  ANGLE_DIR: ${ANGLE_DIR}")
+        message(STATUS "  ANGLE_OUT_DIR: ${ANGLE_OUT_DIR}")
+        message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
+    endif()
+    
+    # Find ANGLE include directory
+    set(ANGLE_INCLUDE_DIR "${ANGLE_DIR}/include")
+    
+    # Check for ANGLE headers
+    if(VERBOSE_DEPS)
+        message(STATUS "  Searching for ANGLE headers:")
+        if(EXISTS "${ANGLE_INCLUDE_DIR}/EGL/egl.h")
+            message(STATUS "    [FOUND] ${ANGLE_INCLUDE_DIR}/EGL/egl.h")
+        else()
+            message(STATUS "    EGL/egl.h not found at ${ANGLE_INCLUDE_DIR}/EGL/egl.h")
+        endif()
+        if(EXISTS "${ANGLE_INCLUDE_DIR}/GLES3/gl3.h")
+            message(STATUS "    [FOUND] ${ANGLE_INCLUDE_DIR}/GLES3/gl3.h")
+        else()
+            message(STATUS "    GLES3/gl3.h not found at ${ANGLE_INCLUDE_DIR}/GLES3/gl3.h")
+        endif()
+    endif()
+    
+    # Find ANGLE libraries
+    if(VERBOSE_DEPS)
+        message(STATUS "  Searching for ANGLE libraries:")
+    endif()
+    
+    # libEGL and libGLESv2
+    if(WIN32)
+        set(ANGLE_EGL_LIB_NAMES "libEGL" "EGL")
+        set(ANGLE_GLES_LIB_NAMES "libGLESv2" "GLESv2")
+        set(ANGLE_LIB_EXT ".lib")
+    else()
+        set(ANGLE_EGL_LIB_NAMES "libEGL")
+        set(ANGLE_GLES_LIB_NAMES "libGLESv2")
+        set(ANGLE_LIB_EXT ".a")
+    endif()
+    
+    set(ANGLE_EGL_FOUND FALSE)
+    set(ANGLE_GLES_FOUND FALSE)
+    
+    # Search for EGL library
+    foreach(_lib_name ${ANGLE_EGL_LIB_NAMES})
+        if(EXISTS "${ANGLE_OUT_DIR}/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_EGL_LIBRARY "${ANGLE_OUT_DIR}/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_EGL_FOUND TRUE)
+            if(VERBOSE_DEPS)
+                message(STATUS "    [FOUND] EGL: ${ANGLE_EGL_LIBRARY}")
+            endif()
+            break()
+        elseif(EXISTS "${ANGLE_OUT_DIR}/lib/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_EGL_LIBRARY "${ANGLE_OUT_DIR}/lib/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_EGL_FOUND TRUE)
+            if(VERBOSE_DEPS)
+                message(STATUS "    [FOUND] EGL: ${ANGLE_EGL_LIBRARY}")
+            endif()
+            break()
+        endif()
+    endforeach()
+    
+    # Search for GLESv2 library
+    foreach(_lib_name ${ANGLE_GLES_LIB_NAMES})
+        if(EXISTS "${ANGLE_OUT_DIR}/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_GLES_LIBRARY "${ANGLE_OUT_DIR}/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_GLES_FOUND TRUE)
+            if(VERBOSE_DEPS)
+                message(STATUS "    [FOUND] GLESv2: ${ANGLE_GLES_LIBRARY}")
+            endif()
+            break()
+        elseif(EXISTS "${ANGLE_OUT_DIR}/lib/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_GLES_LIBRARY "${ANGLE_OUT_DIR}/lib/${_lib_name}${ANGLE_LIB_EXT}")
+            set(ANGLE_GLES_FOUND TRUE)
+            if(VERBOSE_DEPS)
+                message(STATUS "    [FOUND] GLESv2: ${ANGLE_GLES_LIBRARY}")
+            endif()
+            break()
+        endif()
+    endforeach()
+    
+    if(NOT ANGLE_EGL_FOUND)
+        if(VERBOSE_DEPS)
+            message(STATUS "    EGL library not found")
+        endif()
+        message(WARNING "ANGLE EGL library not found. Build with: python build.py --with-angle --build-type ${CMAKE_BUILD_TYPE}")
+        set(USE_ANGLE OFF)
+    endif()
+    
+    if(NOT ANGLE_GLES_FOUND)
+        if(VERBOSE_DEPS)
+            message(STATUS "    GLESv2 library not found")
+        endif()
+        message(WARNING "ANGLE GLESv2 library not found. Build with: python build.py --with-angle --build-type ${CMAKE_BUILD_TYPE}")
+        set(USE_ANGLE OFF)
+    endif()
+    
+    # Results
+    if(VERBOSE_DEPS)
+        message(STATUS "")
+        message(STATUS "  ANGLE Detection Results:")
+        message(STATUS "    ANGLE_INCLUDE_DIR: ${ANGLE_INCLUDE_DIR}")
+        message(STATUS "    ANGLE_EGL_LIBRARY: ${ANGLE_EGL_LIBRARY}")
+        message(STATUS "    ANGLE_GLES_LIBRARY: ${ANGLE_GLES_LIBRARY}")
+        message(STATUS "    USE_ANGLE: ${USE_ANGLE}")
+        message(STATUS "")
+    endif()
+else()
+    if(VERBOSE_DEPS)
+        message(STATUS "")
+        message(STATUS "[ANGLE] Disabled (use -DUSE_ANGLE=ON to enable)")
+        message(STATUS "")
+    endif()
+endif()
+
+# ========================================
 # Executable
 # ========================================
 add_executable(${PROJECT_NAME}
@@ -583,10 +718,18 @@ add_executable(${PROJECT_NAME}
     src/renderer/VulkanContext.cpp
     src/renderer/SkiaRenderer.cpp
     src/renderer/Swapchain.cpp
+    # ANGLE backend files (conditional)
+    src/renderer/AngleContext.cpp
+    src/renderer/AngleRenderer.cpp
 )
 
 # Enable Vulkan backend
 target_compile_definitions(${PROJECT_NAME} PRIVATE VULKAN_BACKEND_ENABLED=1)
+
+# Add ANGLE definition if enabled
+if(USE_ANGLE)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_ANGLE=1)
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -598,6 +741,17 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${VK_BOOTSTRAP_INCLUDE_DIR}
 )
 
+# Add ANGLE include directories if enabled
+if(USE_ANGLE)
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        ${ANGLE_INCLUDE_DIR}
+        ${ANGLE_INCLUDE_DIR}/EGL
+        ${ANGLE_INCLUDE_DIR}/GLES2
+        ${ANGLE_INCLUDE_DIR}/GLES3
+        ${ANGLE_INCLUDE_DIR}/KHR
+    )
+endif()
+
 # ========================================
 # Link Libraries
 # ========================================
@@ -607,6 +761,14 @@ set(LINK_LIBS
     Vulkan::Vulkan
     ${VK_BOOTSTRAP_LIBRARY}
 )
+
+# Add ANGLE libraries if enabled
+if(USE_ANGLE)
+    list(APPEND LINK_LIBS
+        ${ANGLE_EGL_LIBRARY}
+        ${ANGLE_GLES_LIBRARY}
+    )
+endif()
 
 if(WIN32)
     list(APPEND LINK_LIBS
@@ -698,6 +860,11 @@ message(STATUS "")
 message(STATUS "Graphics APIs:")
 message(STATUS "  Vulkan:     ${Vulkan_SDK}")
 message(STATUS "  OpenGL:     Available")
+if(USE_ANGLE)
+    message(STATUS "  ANGLE:      Enabled (OpenGL ES -> Vulkan/D3D)")
+else()
+    message(STATUS "  ANGLE:      Disabled")
+endif()
 message(STATUS "")
 message(STATUS "Renderers:")
 message(STATUS "  Vulkan:     Skia Graphite")

@@ -11,7 +11,8 @@ namespace skia_renderer {
 // Backend type enumeration
 enum class BackendType {
     Vulkan,     // Graphite Vulkan backend (default)
-    OpenGL      // Ganesh OpenGL backend
+    OpenGL,     // Ganesh OpenGL backend (native)
+    ANGLE       // Ganesh OpenGL ES via ANGLE (translates to Vulkan/D3D11/Metal)
 };
 
 // Backend configuration
@@ -21,6 +22,8 @@ struct BackendConfig {
     int vulkanMinor = 3;
     int glMajor = 3;      // OpenGL 3.3 Core
     int glMinor = 3;
+    int angleMajor = 3;   // OpenGL ES 3.0 (ANGLE)
+    int angleMinor = 0;
     
     std::string toString() const {
         switch (type) {
@@ -28,6 +31,8 @@ struct BackendConfig {
                 return "Vulkan " + std::to_string(vulkanMajor) + "." + std::to_string(vulkanMinor);
             case BackendType::OpenGL:
                 return "OpenGL " + std::to_string(glMajor) + "." + std::to_string(glMinor);
+            case BackendType::ANGLE:
+                return "ANGLE (OpenGL ES " + std::to_string(angleMajor) + "." + std::to_string(angleMinor) + ")";
         }
         return "Unknown";
     }
