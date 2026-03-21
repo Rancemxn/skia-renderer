@@ -198,7 +198,6 @@ def build_sdl3(source_dir: Path, build_type: str,
     
     if not source_dir.exists():
         print(f"  ERROR: SDL3 source not found: {source_dir}")
-        print("  Run: python sync.py")
         return False
     
     # Check if prebuilt
@@ -248,7 +247,6 @@ def build_vkbootstrap(source_dir: Path, build_type: str,
     
     if not source_dir.exists():
         print(f"  ERROR: vk-bootstrap source not found: {source_dir}")
-        print("  Run: python sync.py")
         return False
     
     # Build directory: deps/vk-bootstrap/out/{Debug,Release}
@@ -292,7 +290,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     
     if not angle_dir.exists():
         print(f"  ERROR: ANGLE source not found: {angle_dir}")
-        print("  Run: python sync.py")
         return False
     
     # Check if ANGLE is already built
@@ -376,11 +373,31 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
         f'is_debug={"true" if build_type == "Debug" else "false"}',
         'is_component_build=false',
         'angle_build_all=false',  # Don't build tests/samples
+        'angle_standalone=true',
+        # Feature
+        'angle_enable_cl=true',
+        'angle_enable_essl=true',
+        'angle_enable_glsl=true',
+        'angle_enable_hlsl=true',
+        'angle_enable_overlay=false',
+        'angle_enable_vulkan_system_info=true',
+        # Render
+        'angle_build_vulkan_system_info=true',
         'angle_enable_vulkan=true',
         'angle_enable_gl=true',
         'angle_enable_d3d11=true',
-        'angle_enable_d3d9=false',
-        'angle_standalone=true',
+        'angle_enable_d3d9=true',
+        'angle_enable_wgpu=true',
+        'dawn_enable_d3d11=true',
+        'dawn_enable_d3d12=true',
+        'dawn_enable_desktop_gl=true',
+        'dawn_enable_opengles=true',
+        'dawn_enable_vulkan=true',
+        # Perf
+        'angle_enable_abseil=true',
+        'angle_enable_d3d11_compositor_native_window=true',
+        # Debug
+        f'angle_debug_layers_enabled={"true" if build_type == "Debug" else "false"}',
     ]
     
     if sccache:
@@ -452,24 +469,26 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     print("  Using external ANGLE (Skia will use ANGLE)")
     
     gn_args = [
+        # Basic
         f'target_cpu="{target_cpu}"',
         'cc="clang"', 'cxx="clang++"',
         f'is_official_build={"true" if build_type == "Release" else "false"}',
         f'is_debug={"true" if build_type == "Debug" else "false"}',
-        'is_component_build=false',
+        'is_component_build=false', # MT static linking
+        # Render
         'skia_enable_ganesh=true',
         'skia_enable_graphite=true',
         'skia_use_vulkan=true',
         'skia_use_gl=true',
-        'skia_enable_pdf=true',
-        'skia_enable_precompile=true',
-        'skia_use_angle=true',  # Always use ANGLE
-        'skia_use_freetype=true',
-        'skia_use_expat=true',
-        'skia_use_zlib=true',
-        'skia_use_wuffs=true',
-        'skia_use_vma=true',
-        # Use bundled libraries
+        'skia_use_egl=true',
+        'skia_use_angle=true',
+        'skia_use_dawn=true',
+        'dawn_enable_d3d11=true',
+        'dawn_enable_d3d12=true',
+        'dawn_enable_opengles=true',
+        'dawn_enable_vulkan=true',
+        'skia_use_epoxy_egl=false',
+        # Use external codec
         'skia_use_system_expat=false',
         'skia_use_system_harfbuzz=false',
         'skia_use_system_icu=false',
@@ -478,16 +497,52 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         'skia_use_system_libwebp=false',
         'skia_use_system_zlib=false',
         'skia_use_system_freetype2=false',
+        "skia_use_libavif=false",
+        "skia_use_libwebp_encode=false",
+        "skia_use_libwebp_decode=false",
+        "skia_use_libpng_encode=false",
+        "skia_use_libpng_decode=false",
+        "skia_use_libjpeg_turbo_encode=false",
+        "skia_use_libjpeg_turbo_decode=false",
+        "skia_use_libjxl_decode=false",
+        "skia_use_crabbyavif=false",
+        "skia_use_dng_sdk=false",
+        # Text
+        'skia_enable_skparagraph=true',
+        'skia_enable_skshaper=true',
+        'skia_enable_skunicode=true',
+        'skia_use_icu=true',
+        'skia_use_bidi=true',
+        'skia_use_fontations=true',
+        'skia_use_harfbuzz=true',
+        # Perf
+        'skia_compile_modules=true',
         'skia_enable_tools=false',
-        "skia_use_libavif=true",
-        "skia_use_libwebp_encode=true",
-        "skia_use_libwebp_decode=true",
-        "skia_use_libpng_encode=true",
-        "skia_use_libpng_decode=true",
-        "skia_use_libjpeg_turbo_encode=true",
-        "skia_use_libjpeg_turbo_decode=true",
-        "skia_use_libjxl_decode=true",
+        'skia_enable_optimize_size=false',
+        'skia_enable_precompile=true',
+        'skia_include_multiframe_procs=true',
+        # Features
+        'skia_enable_pdf=true',
+        'skia_enable_svg=true',
+        'skia_enable_skottie=true',
+        'skia_use_freetype=true',
+        'skia_use_expat=true',
+        'skia_use_zlib=true',
+        'skia_use_wuffs=true',
+        'skia_use_vma=true',
+        'skia_pdf_subset_harfbuzz=true',
+        # Debug
+        f'skia_enable_vulkan_debug_layers={"true" if build_type == "Debug" else "false"}',
+        f'skia_enable_spirv_validation={"true" if build_type == "Debug" else "false"}',
     ]
+
+    # Perf for Different OS
+    if is_windows:
+        # Render
+        gn_args.append('skia_use_direct3d=true')
+
+        # Font
+        gn_args.append('skia_enable_fontmgr_win=true')
     
     if is_windows:
         gn_args.append(f'clang_win="{llvm_path}"')
