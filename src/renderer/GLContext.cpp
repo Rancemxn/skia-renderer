@@ -22,12 +22,19 @@ GLContext::~GLContext() {
 bool GLContext::setupGLAttributes(int majorVersion, int minorVersion) {
     // Set OpenGL attributes before creating context
     
-    // Request Core Profile (required for OpenGL 3.2+)
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    // Try Core Profile first for OpenGL 3.2+, but allow fallback
+    // Some Windows drivers have issues with strict Core Profile
+    if (majorVersion >= 3) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    }
+    // Compatibility profile is more widely supported
     
-    // Set OpenGL version
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, majorVersion);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minorVersion);
+    // Set OpenGL version - request slightly lower version for better compatibility
+    // Most drivers will give the highest available version anyway
+    int requestMajor = (majorVersion > 4) ? 4 : majorVersion;
+    int requestMinor = (majorVersion > 4) ? 5 : minorVersion;
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, requestMajor);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, requestMinor);
     
     // Enable double buffering
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -49,7 +56,7 @@ bool GLContext::setupGLAttributes(int majorVersion, int minorVersion) {
     // SDL_GL_SetAttribute(SDL_GL_CONTEXT_EGL, 1);
 #endif
 
-    LOG_INFO("  OpenGL attributes set: {}.{} Core Profile", majorVersion, minorVersion);
+    LOG_INFO("  OpenGL attributes set: {}.{} Compatibility Profile", requestMajor, requestMinor);
     return true;
 }
 

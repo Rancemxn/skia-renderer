@@ -145,30 +145,56 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
     // Get window size
     SDL_GetWindowSize(window, &m_width, &m_height);
 
+    // Get native window handle
 #if defined(_WIN32)
-    // On Windows, use ANGLE with platform selection
-    // Prefer Vulkan backend, fall back to D3D11
-    EGLAttrib displayAttributes[] = {
-        EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE,
-        EGL_NONE
-    };
-    
-    // Try Vulkan backend first
-    m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE, 
-        reinterpret_cast<void*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr)),
-        displayAttributes);
-    
-    if (m_display == EGL_NO_DISPLAY) {
-        LOG_WARN("  ANGLE Vulkan backend not available, trying D3D11...");
-        displayAttributes[1] = EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE;
-        m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
-            reinterpret_cast<void*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr)),
-            displayAttributes);
-    }
+    EGLNativeWindowType nativeWindow = reinterpret_cast<EGLNativeWindowType>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr));
+    EGLNativeDisplayType nativeDisplay = EGL_DEFAULT_DISPLAY;
 #else
-    // On Linux/macOS, use default EGL display
-    m_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    EGLNativeWindowType nativeWindow = reinterpret_cast<EGLNativeWindowType>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.x11.window", nullptr));
+    EGLNativeDisplayType nativeDisplay = EGL_DEFAULT_DISPLAY;
 #endif
+
+    // Check for ANGLE platform extension
+    const char* clientExtensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+    bool hasAnglePlatform = clientExtensions && strstr(clientExtensions, "EGL_ANGLE_platform_angle");
+    
+    if (hasAnglePlatform) {
+        LOG_INFO("  EGL_ANGLE_platform_angle extension available");
+    }
+
+#if defined(_WIN32)
+    // Try eglGetPlatformDisplay first (EGL 1.5)
+    // This requires EGL_ANGLE_platform_angle extension
+    if (hasAnglePlatform) {
+        // Try D3D11 backend (most reliable on Windows)
+        EGLAttrib displayAttributes[] = {
+            EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
+            EGL_NONE
+        };
+        
+        LOG_INFO("  Trying ANGLE D3D11 backend via eglGetPlatformDisplay...");
+        m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE, 
+            reinterpret_cast<void*>(nativeWindow), displayAttributes);
+        
+        if (m_display == EGL_NO_DISPLAY) {
+            EGLint error = eglGetError();
+            LOG_WARN("  D3D11 backend failed (error 0x{:X}), trying OpenGL...", error);
+            
+            // Try OpenGL backend as fallback
+            displayAttributes[1] = EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE;
+            m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
+                reinterpret_cast<void*>(nativeWindow), displayAttributes);
+        }
+    }
+#endif
+
+    // Fallback to eglGetDisplay if eglGetPlatformDisplay didn't work
+    if (m_display == EGL_NO_DISPLAY) {
+        LOG_INFO("  Using eglGetDisplay (fallback)...");
+        m_display = eglGetDisplay(nativeDisplay);
+    }
 
     if (m_display == EGL_NO_DISPLAY) {
         LOG_ERROR("  Failed to get EGL display: 0x{:X}", eglGetError());
