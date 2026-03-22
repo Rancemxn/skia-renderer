@@ -6,8 +6,53 @@
 #include "GLContext.h"
 #include "core/Logger.h"
 
+// Include SDL OpenGL headers - this provides platform-specific GL function loading
 #include <SDL3/SDL_opengl.h>
 #include <cstdio>
+
+// On Windows, we need to use SDL's GL function loading mechanism
+// glGetString and other GL functions may need to be loaded dynamically
+#if defined(_WIN32)
+// Store function pointers for GL functions that may need dynamic loading
+static PFNGLGETSTRINGPROC s_glGetString = nullptr;
+static PFNGLGETINTEGERVPROC s_glGetIntegerv = nullptr;
+
+static void initGLFunctions() {
+    if (!s_glGetString) {
+        s_glGetString = (PFNGLGETSTRINGPROC)SDL_GL_GetProcAddress("glGetString");
+    }
+    if (!s_glGetIntegerv) {
+        s_glGetIntegerv = (PFNGLGETINTEGERVPROC)SDL_GL_GetProcAddress("glGetIntegerv");
+    }
+}
+
+static const char* safeGlGetString(GLenum name) {
+    initGLFunctions();
+    if (s_glGetString) {
+        return (const char*)s_glGetString(name);
+    }
+    // Fallback to direct call (may not work on all systems)
+    return (const char*)glGetString(name);
+}
+
+static void safeGlGetIntegerv(GLenum name, GLint* params) {
+    initGLFunctions();
+    if (s_glGetIntegerv) {
+        s_glGetIntegerv(name, params);
+    } else {
+        glGetIntegerv(name, params);
+    }
+}
+#else
+// On non-Windows, direct calls usually work
+static const char* safeGlGetString(GLenum name) {
+    return (const char*)glGetString(name);
+}
+
+static void safeGlGetIntegerv(GLenum name, GLint* params) {
+    glGetIntegerv(name, params);
+}
+#endif
 
 namespace skia_renderer {
 
@@ -33,21 +78,17 @@ bool GLContext::verifyGLVersion(int majorVersion, int minorVersion) {
         LOG_WARN("  OpenGL error before version check: 0x{:X}", glError);
     }
     
-    // Get actual OpenGL version
-    const char* versionStr = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    // Get actual OpenGL version using safe function
+    const char* versionStr = safeGlGetString(GL_VERSION);
     if (!versionStr) {
         // Try to get more info about why glGetString failed
         glError = glGetError();
         LOG_ERROR("  Failed to get OpenGL version string");
         LOG_ERROR("  glGetString returned NULL, OpenGL error: 0x{:X}", glError);
         
-        // Check if context is actually current
-        GLboolean isDirect = glIsEnabled(GL_BLEND);  // Simple test call
-        LOG_ERROR("  GL context test (glIsEnabled): {}", isDirect ? "responsive" : "not responsive");
-        
         // Try vendor string as well
-        const char* vendorStr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
-        const char* rendererStr = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+        const char* vendorStr = safeGlGetString(GL_VENDOR);
+        const char* rendererStr = safeGlGetString(GL_RENDERER);
         LOG_ERROR("  GL_VENDOR: {}", vendorStr ? vendorStr : "(null)");
         LOG_ERROR("  GL_RENDERER: {}", rendererStr ? rendererStr : "(null)");
         
@@ -188,27 +229,27 @@ void GLContext::setVSync(bool enable) {
 std::string GLContext::getGLVersionString() const {
     if (!m_initialized) return "Not initialized";
     
-    const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    const char* version = safeGlGetString(GL_VERSION);
     return version ? version : "Unknown";
 }
 
 std::string GLContext::getGLRendererString() const {
     if (!m_initialized) return "Not initialized";
     
-    const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+    const char* renderer = safeGlGetString(GL_RENDERER);
     return renderer ? renderer : "Unknown";
 }
 
 std::string GLContext::getGLVendorString() const {
     if (!m_initialized) return "Not initialized";
     
-    const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+    const char* vendor = safeGlGetString(GL_VENDOR);
     return vendor ? vendor : "Unknown";
 }
 
 int GLContext::getCurrentFramebuffer() const {
     GLint framebuffer = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+    safeGlGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
     return framebuffer;
 }
 
