@@ -465,9 +465,6 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     is_windows = platform.system() == "Windows"
     crt_flag = "/MTd" if build_type == "Debug" else "/MT"
     
-    # ANGLE is required - always use ANGLE
-    print("  Using external ANGLE (Skia will use ANGLE)")
-    
     gn_args = [
         # Basic
         f'target_cpu="{target_cpu}"',
@@ -493,7 +490,6 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         'skia_use_system_harfbuzz=false',
         'skia_use_system_icu=false',
         'skia_use_system_libpng=false',
-        'skia_use_system_libwebp=false',
         'skia_use_system_zlib=false',
         'skia_use_system_freetype2=false',
         "skia_use_libavif=false",
