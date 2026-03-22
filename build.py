@@ -676,15 +676,37 @@ def build_main_project(script_dir: Path, build_type: str,
     # Copy ANGLE DLLs to build directory
     if platform.system() == "Windows":
         angle_out_dir = deps_dir / "angle" / "out" / build_type
-        angle_dlls = ["libEGL.dll", "libGLESv2.dll"]
-        for dll in angle_dlls:
-            src = angle_out_dir / dll
-            dst = build_dir / dll
-            if src.exists():
+        
+        # Find all DLL files in ANGLE output directory
+        angle_dlls = []
+        for dll in angle_out_dir.glob("*.dll"):
+            angle_dlls.append(dll.name)
+        
+        # Also check for PDB files (debug symbols)
+        angle_pdbs = []
+        for pdb in angle_out_dir.glob("*.pdb"):
+            angle_pdbs.append(pdb.name)
+        
+        if angle_dlls:
+            print(f"  Copying ANGLE DLLs ({len(angle_dlls)} files):")
+            for dll_name in sorted(angle_dlls):
+                src = angle_out_dir / dll_name
+                dst = build_dir / dll_name
                 if dst.exists():
                     dst.unlink()
                 shutil.copy2(str(src), str(dst))
-                print(f"  Copied: {dll}")
+                print(f"    {dll_name}")
+            
+            # Copy PDB files for debugging
+            for pdb_name in sorted(angle_pdbs):
+                src = angle_out_dir / pdb_name
+                dst = build_dir / pdb_name
+                if dst.exists():
+                    dst.unlink()
+                shutil.copy2(str(src), str(dst))
+                print(f"    {pdb_name} (debug symbols)")
+        else:
+            print("  WARNING: No ANGLE DLLs found")
     
     # Report output
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
