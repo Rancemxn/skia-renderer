@@ -1,12 +1,3 @@
-"""
-Skia Renderer - Dependency Sync Script
-Downloads SDL3, vk-bootstrap, Skia, ANGLE
-
-Supported tools:
-  - aria2c (preferred) or curl for downloads
-  - 7z (preferred), unzip, or tar for extraction
-"""
-
 import os
 import sys
 import shutil

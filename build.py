@@ -1,20 +1,3 @@
-"""
-Skia Renderer - Build System
-Unified build script for dependencies and main project
-
-Directory Structure:
-  deps/                           - Source + build outputs
-    ├── SDL3/out/{Debug,Release}/
-    ├── vk-bootstrap/out/{Debug,Release}/
-    ├── angle/out/{Debug,Release}/
-    ├── skia/out/{Debug,Release}/
-    └── depot_tools/
-
-  build/                          - Main project outputs
-    ├── Debug/
-    └── Release/
-"""
-
 import os
 import sys
 import shutil
@@ -25,7 +8,6 @@ import platform
 import signal
 from pathlib import Path
 
-# Track running processes for cleanup on Ctrl+C
 _running_processes = []
 
 def _signal_handler(signum, frame):
@@ -477,7 +459,6 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
         'skia_enable_graphite=true',
         'skia_use_vulkan=true',
         'skia_use_gl=true',
-        'skia_use_egl=true',
         'skia_use_angle=true',
         'skia_use_dawn=true',
         'dawn_enable_d3d11=true',
