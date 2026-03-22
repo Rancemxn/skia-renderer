@@ -45,6 +45,7 @@ private:
     
     bool initializeVulkanBackend();
     bool initializeOpenGLBackend();
+    bool initializeANGLEBackend();
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
