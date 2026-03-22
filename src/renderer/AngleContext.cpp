@@ -13,7 +13,7 @@
 
 namespace skia_renderer {
 
-// Platform-specific EGL extensions
+// Platform-specific EGL extensions and defines
 #if defined(_WIN32)
 #define EGL_PLATFORM_ANGLE_ANGLE 0x3202
 #define EGL_PLATFORM_ANGLE_TYPE_ANGLE 0x3203
@@ -23,6 +23,11 @@ namespace skia_renderer {
 #define EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE 0x3453
 #define EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE 0x3454
 #define EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE 0x3455
+#endif
+
+// EGL extension for context minor version (may not be defined in all headers)
+#ifndef EGL_CONTEXT_MINOR_VERSION_KHR
+#define EGL_CONTEXT_MINOR_VERSION_KHR 0x30FB
 #endif
 
 AngleContext::AngleContext() = default;
@@ -95,11 +100,11 @@ bool AngleContext::createSurface() {
     // Create window surface
     m_surface = eglCreateWindowSurface(m_display, m_config, 
 #if defined(_WIN32)
-        reinterpret_cast<EGLNativeWindowType>(SDL_GetProperty(SDL_GetWindowProperties(m_window), "SDL.window.win32.hwnd", nullptr)),
+        reinterpret_cast<EGLNativeWindowType>(SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), "SDL.window.win32.hwnd", nullptr)),
 #elif defined(__linux__)
-        reinterpret_cast<EGLNativeWindowType>(SDL_GetProperty(SDL_GetWindowProperties(m_window), "SDL.window.x11.window", nullptr)),
+        reinterpret_cast<EGLNativeWindowType>(SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), "SDL.window.x11.window", nullptr)),
 #elif defined(__APPLE__)
-        reinterpret_cast<EGLNativeWindowType>(SDL_GetProperty(SDL_GetWindowProperties(m_window), "SDL.window.cocoa.window", nullptr)),
+        reinterpret_cast<EGLNativeWindowType>(SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), "SDL.window.cocoa.window", nullptr)),
 #else
         (EGLNativeWindowType)nullptr,  // Fallback
 #endif
@@ -116,7 +121,6 @@ bool AngleContext::createSurface() {
 void AngleContext::logEGLConfig() {
     const char* displayVendor = eglQueryString(m_display, EGL_VENDOR);
     const char* displayVersion = eglQueryString(m_display, EGL_VERSION);
-    const char* displayExtensions = eglQueryString(m_display, EGL_EXTENSIONS);
     
     LOG_INFO("  EGL Vendor: {}", displayVendor ? displayVendor : "Unknown");
     LOG_INFO("  EGL Version: {}", displayVersion ? displayVersion : "Unknown");
@@ -144,21 +148,21 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
 #if defined(_WIN32)
     // On Windows, use ANGLE with platform selection
     // Prefer Vulkan backend, fall back to D3D11
-    EGLint displayAttributes[] = {
+    EGLAttrib displayAttributes[] = {
         EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE,
         EGL_NONE
     };
     
     // Try Vulkan backend first
-    m_display = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, 
-        reinterpret_cast<void*>(SDL_GetProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr)),
+    m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE, 
+        reinterpret_cast<void*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr)),
         displayAttributes);
     
     if (m_display == EGL_NO_DISPLAY) {
         LOG_WARN("  ANGLE Vulkan backend not available, trying D3D11...");
         displayAttributes[1] = EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE;
-        m_display = eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE,
-            reinterpret_cast<void*>(SDL_GetProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr)),
+        m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
+            reinterpret_cast<void*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr)),
             displayAttributes);
     }
 #else
