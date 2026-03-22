@@ -13,6 +13,7 @@
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/GrTypes.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
@@ -78,9 +79,9 @@ bool AngleRenderer::initialize(SDL_Window* window, int width, int height, const 
 bool AngleRenderer::createSkiaContext() {
     LOG_INFO("  Creating Skia Ganesh context for ANGLE...");
 
-    // Create EGL interface for ANGLE
-    // Note: For ANGLE, we use GrGLMakeEGLInterface instead of GrGLMakeNativeInterface
-    sk_sp<const GrGLInterface> glInterface = GrGLMakeEGLInterface();
+    // Create native GL interface (works for ANGLE EGL context)
+    // Note: GrGLMakeNativeInterface automatically detects the current GL context
+    sk_sp<const GrGLInterface> glInterface = GrGLMakeNativeInterface();
 
     if (!glInterface) {
         LOG_ERROR("  Failed to create EGL GL interface");
@@ -125,17 +126,25 @@ bool AngleRenderer::createSurface() {
     fbInfo.fFBOID = framebuffer;
     fbInfo.fFormat = GL_RGBA8;
 
-    // Create backend surface
+    // Create backend render target
+    // sampleCount=0 means no MSAA, stencilBits=8 for stencil buffer
+    int sampleCount = 0;
+    int stencilBits = 8;
     GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeGL(
-        m_width, m_height, fbInfo, kTopLeft_GrSurfaceOrigin);
+        m_width, m_height, sampleCount, stencilBits, fbInfo);
 
-    // Create Skia surface
-    SkSurfaceProps surfaceProps;
-    surfaceProps.fColorType = kRGBA_8888_SkColorType;
-    surfaceProps.fSurfaceOrigin = kTopLeft_GrSurfaceOrigin;
+    // Create Skia surface with proper properties
+    // SkSurfaceProps constructor takes flags and pixel geometry
+    SkSurfaceProps surfaceProps(0, kUnknown_SkPixelGeometry);
 
-    m_impl->surface = SkSurfaces::WrapRenderTargets(
-        m_impl->grContext.get(), backendRT, &surfaceProps);
+    m_impl->surface = SkSurfaces::RenderTarget(
+        m_impl->grContext.get(),      // GrRecordingContext
+        skgpu::Budgeted::kYes,        // Budgeted
+        backendRT,                     // GrBackendRenderTarget
+        kRGBA_8888_SkColorType,       // SkColorType
+        nullptr,                       // SkColorSpace (null = sRGB)
+        &surfaceProps                  // SkSurfaceProps
+    );
     
     if (!m_impl->surface) {
         LOG_ERROR("  Failed to create Skia surface");
@@ -217,8 +226,8 @@ void AngleRenderer::render() {
 
     backendInfo += " | " + m_angleContext->getGLRendererString();
     
-    // Render the scene
-    m_sceneRenderer->render(canvas, m_width, m_height, backendInfo);
+    // Render the scene (rendererName is "Skia Ganesh" for OpenGL ES via ANGLE)
+    m_sceneRenderer->render(canvas, m_width, m_height, backendInfo, "Skia Ganesh");
 }
 
 void AngleRenderer::setFPS(float fps) {
