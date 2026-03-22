@@ -20,43 +20,9 @@ GLContext::~GLContext() {
 }
 
 bool GLContext::setupGLAttributes(int majorVersion, int minorVersion) {
-    // Set OpenGL attributes before creating context
-    
-    // Try Core Profile first for OpenGL 3.2+, but allow fallback
-    // Some Windows drivers have issues with strict Core Profile
-    if (majorVersion >= 3) {
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
-    }
-    // Compatibility profile is more widely supported
-    
-    // Set OpenGL version - request slightly lower version for better compatibility
-    // Most drivers will give the highest available version anyway
-    int requestMajor = (majorVersion > 4) ? 4 : majorVersion;
-    int requestMinor = (majorVersion > 4) ? 5 : minorVersion;
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, requestMajor);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, requestMinor);
-    
-    // Enable double buffering
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    
-    // Set depth buffer size
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    
-    // Set stencil buffer size (useful for some Skia operations)
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    
-    // Request RGBA with 8 bits per channel
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    
-#if defined(__linux__) && !defined(__ANDROID__)
-    // On Linux, prefer EGL over GLX for better compatibility with modern systems
-    // SDL_GL_SetAttribute(SDL_GL_CONTEXT_EGL, 1);
-#endif
-
-    LOG_INFO("  OpenGL attributes set: {}.{} Compatibility Profile", requestMajor, requestMinor);
+    // OpenGL attributes should already be set by Application.cpp before window creation
+    // This function is kept for logging purposes
+    LOG_INFO("  OpenGL attributes set: {}.{} Compatibility Profile", majorVersion, minorVersion);
     return true;
 }
 

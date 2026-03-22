@@ -88,6 +88,18 @@ bool Application::initialize() {
     } else {
         windowFlags = static_cast<SDL_WindowFlags>(windowFlags | SDL_WINDOW_OPENGL);
         LOG_INFO("Creating window with OpenGL support");
+        
+        // Set OpenGL attributes BEFORE creating window (critical for proper context creation)
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, m_impl->backendConfig.glMajor);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, m_impl->backendConfig.glMinor);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
     }
 #else
     // Only OpenGL/ANGLE is available
@@ -96,6 +108,19 @@ bool Application::initialize() {
         m_impl->backendConfig.type = BackendType::OpenGL;
     }
     windowFlags = static_cast<SDL_WindowFlags>(windowFlags | SDL_WINDOW_OPENGL);
+    
+    // Set OpenGL attributes BEFORE creating window (critical for proper context creation)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, m_impl->backendConfig.glMajor);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, m_impl->backendConfig.glMinor);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    
     if (m_impl->backendConfig.type == BackendType::ANGLE) {
         LOG_INFO("Creating window with ANGLE (OpenGL ES) support");
     } else {
