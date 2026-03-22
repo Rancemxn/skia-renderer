@@ -97,24 +97,15 @@ bool AngleContext::createContext(int majorVersion, int minorVersion) {
 }
 
 bool AngleContext::createSurface() {
-    // Create window surface
-    m_surface = eglCreateWindowSurface(m_display, m_config, 
-#if defined(_WIN32)
-        reinterpret_cast<EGLNativeWindowType>(SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), "SDL.window.win32.hwnd", nullptr)),
-#elif defined(__linux__)
-        reinterpret_cast<EGLNativeWindowType>(SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), "SDL.window.x11.window", nullptr)),
-#elif defined(__APPLE__)
-        reinterpret_cast<EGLNativeWindowType>(SDL_GetPointerProperty(SDL_GetWindowProperties(m_window), "SDL.window.cocoa.window", nullptr)),
-#else
-        (EGLNativeWindowType)nullptr,  // Fallback
-#endif
-        nullptr);
+    // Create window surface using stored native window handle
+    m_surface = eglCreateWindowSurface(m_display, m_config, m_nativeWindow, nullptr);
 
     if (m_surface == EGL_NO_SURFACE) {
         LOG_ERROR("  Failed to create EGL window surface: 0x{:X}", eglGetError());
         return false;
     }
 
+    LOG_INFO("  EGL surface created successfully");
     return true;
 }
 
@@ -145,15 +136,13 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
     // Get window size
     SDL_GetWindowSize(window, &m_width, &m_height);
 
-    // Get native window handle
+    // Get native window handle for surface creation (not for display)
 #if defined(_WIN32)
-    EGLNativeWindowType nativeWindow = reinterpret_cast<EGLNativeWindowType>(
+    m_nativeWindow = reinterpret_cast<EGLNativeWindowType>(
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr));
-    EGLNativeDisplayType nativeDisplay = EGL_DEFAULT_DISPLAY;
 #else
-    EGLNativeWindowType nativeWindow = reinterpret_cast<EGLNativeWindowType>(
+    m_nativeWindow = reinterpret_cast<EGLNativeWindowType>(
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.x11.window", nullptr));
-    EGLNativeDisplayType nativeDisplay = EGL_DEFAULT_DISPLAY;
 #endif
 
     // Check for ANGLE platform extension
@@ -166,7 +155,7 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
 
 #if defined(_WIN32)
     // Try eglGetPlatformDisplay first (EGL 1.5)
-    // This requires EGL_ANGLE_platform_angle extension
+    // For ANGLE, native_display should be EGL_DEFAULT_DISPLAY (not window handle)
     if (hasAnglePlatform) {
         // Try D3D11 backend (most reliable on Windows)
         EGLAttrib displayAttributes[] = {
@@ -176,7 +165,7 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
         
         LOG_INFO("  Trying ANGLE D3D11 backend via eglGetPlatformDisplay...");
         m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE, 
-            reinterpret_cast<void*>(nativeWindow), displayAttributes);
+            reinterpret_cast<void*>(EGL_DEFAULT_DISPLAY), displayAttributes);
         
         if (m_display == EGL_NO_DISPLAY) {
             EGLint error = eglGetError();
@@ -185,7 +174,7 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
             // Try OpenGL backend as fallback
             displayAttributes[1] = EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE;
             m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
-                reinterpret_cast<void*>(nativeWindow), displayAttributes);
+                reinterpret_cast<void*>(EGL_DEFAULT_DISPLAY), displayAttributes);
         }
     }
 #endif
@@ -193,7 +182,7 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
     // Fallback to eglGetDisplay if eglGetPlatformDisplay didn't work
     if (m_display == EGL_NO_DISPLAY) {
         LOG_INFO("  Using eglGetDisplay (fallback)...");
-        m_display = eglGetDisplay(nativeDisplay);
+        m_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     }
 
     if (m_display == EGL_NO_DISPLAY) {

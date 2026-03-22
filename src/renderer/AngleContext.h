@@ -138,6 +138,7 @@ private:
     void logEGLConfig();
 
     SDL_Window* m_window = nullptr;
+    EGLNativeWindowType m_nativeWindow = nullptr;
     EGLDisplay m_display = EGL_NO_DISPLAY;
     EGLContext m_context = EGL_NO_CONTEXT;
     EGLSurface m_surface = EGL_NO_SURFACE;

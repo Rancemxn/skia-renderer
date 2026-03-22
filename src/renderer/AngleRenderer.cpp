@@ -21,7 +21,59 @@
 #include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
 
+// EGL header for function loading
+#include <EGL/egl.h>
+
+// Windows headers for GetProcAddress
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 namespace skia_renderer {
+
+// Helper to create GrGLInterface using eglGetProcAddress
+static sk_sp<const GrGLInterface> create_egl_gl_interface() {
+    // Get GL version info first
+    const char* versionStr = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    const char* vendorStr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+    const char* rendererStr = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+    
+    LOG_INFO("  GL Version: {}", versionStr ? versionStr : "(null)");
+    LOG_INFO("  GL Vendor: {}", vendorStr ? vendorStr : "(null)");
+    LOG_INFO("  GL Renderer: {}", rendererStr ? rendererStr : "(null)");
+    
+    // Create GL interface using GrGLMakeNativeInterface
+    // On EGL/ANGLE, this should work if EGL context is current
+    auto glInterface = GrGLMakeNativeInterface();
+    
+    if (glInterface) {
+        return glInterface;
+    }
+    
+    // If GrGLMakeNativeInterface fails, try creating interface manually
+    LOG_WARN("  GrGLMakeNativeInterface failed, trying manual interface creation...");
+    
+    // Create empty interface and populate it
+    GrGLGetProc getProc = [](void* ctx, const char* name) -> GrGLFuncPtr {
+        (void)ctx;
+        // First try eglGetProcAddress
+        GrGLFuncPtr proc = reinterpret_cast<GrGLFuncPtr>(eglGetProcAddress(name));
+        if (proc) {
+            return proc;
+        }
+        // On Windows, also check if it's a standard OpenGL 1.1 function
+        // These are exported directly from opengl32.dll
+        return reinterpret_cast<GrGLFuncPtr>(
+#if defined(_WIN32)
+            GetProcAddress(GetModuleHandleA("opengl32.dll"), name)
+#else
+            nullptr
+#endif
+        );
+    };
+    
+    return GrGLInterfaces::MakeGL(getProc, nullptr);
+}
 
 struct AngleRenderer::Impl {
     sk_sp<GrDirectContext> grContext;
@@ -78,12 +130,15 @@ bool AngleRenderer::initialize(SDL_Window* window, int width, int height, const 
 bool AngleRenderer::createSkiaContext() {
     LOG_INFO("  Creating Skia Ganesh context for ANGLE...");
 
-    // Create native GL interface (works for ANGLE EGL context)
-    // Note: GrGLMakeNativeInterface automatically detects the current GL context
-    sk_sp<const GrGLInterface> glInterface = GrGLMakeNativeInterface();
+    // Ensure EGL context is current before creating GL interface
+    m_angleContext->makeCurrent();
+
+    // Create GL interface using our EGL-aware helper
+    sk_sp<const GrGLInterface> glInterface = create_egl_gl_interface();
 
     if (!glInterface) {
         LOG_ERROR("  Failed to create EGL GL interface");
+        LOG_ERROR("  This usually means the GL context is not current or GL functions cannot be loaded");
         return false;
     }
 
