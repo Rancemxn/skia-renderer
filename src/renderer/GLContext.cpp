@@ -27,10 +27,30 @@ bool GLContext::setupGLAttributes(int majorVersion, int minorVersion) {
 }
 
 bool GLContext::verifyGLVersion(int majorVersion, int minorVersion) {
+    // Check for OpenGL errors first
+    GLenum glError = glGetError();
+    if (glError != GL_NO_ERROR) {
+        LOG_WARN("  OpenGL error before version check: 0x{:X}", glError);
+    }
+    
     // Get actual OpenGL version
     const char* versionStr = reinterpret_cast<const char*>(glGetString(GL_VERSION));
     if (!versionStr) {
+        // Try to get more info about why glGetString failed
+        glError = glGetError();
         LOG_ERROR("  Failed to get OpenGL version string");
+        LOG_ERROR("  glGetString returned NULL, OpenGL error: 0x{:X}", glError);
+        
+        // Check if context is actually current
+        GLboolean isDirect = glIsEnabled(GL_BLEND);  // Simple test call
+        LOG_ERROR("  GL context test (glIsEnabled): {}", isDirect ? "responsive" : "not responsive");
+        
+        // Try vendor string as well
+        const char* vendorStr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+        const char* rendererStr = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+        LOG_ERROR("  GL_VENDOR: {}", vendorStr ? vendorStr : "(null)");
+        LOG_ERROR("  GL_RENDERER: {}", rendererStr ? rendererStr : "(null)");
+        
         return false;
     }
 
@@ -76,12 +96,21 @@ bool GLContext::initialize(SDL_Window* window, int majorVersion, int minorVersio
         return false;
     }
 
+    // Log SDL OpenGL info
+    int glMajor = 0, glMinor = 0, profileMask = 0;
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &glMajor);
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &glMinor);
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &profileMask);
+    LOG_INFO("  Requested GL version from SDL: {}.{}", glMajor, glMinor);
+    LOG_INFO("  Requested profile mask: {}", profileMask);
+
     // Create OpenGL context
     m_glContext = SDL_GL_CreateContext(window);
     if (!m_glContext) {
         LOG_ERROR("  Failed to create OpenGL context: {}", SDL_GetError());
         return false;
     }
+    LOG_INFO("  OpenGL context created successfully");
 
     // Make context current
     if (!SDL_GL_MakeCurrent(window, m_glContext)) {
@@ -90,9 +119,14 @@ bool GLContext::initialize(SDL_Window* window, int majorVersion, int minorVersio
         m_glContext = nullptr;
         return false;
     }
+    LOG_INFO("  OpenGL context made current");
 
-    // Enable VSync by default
-    setVSync(true);
+    // Log actual GL version from SDL
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &glMajor);
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &glMinor);
+    SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &profileMask);
+    LOG_INFO("  Actual GL version from SDL: {}.{}", glMajor, glMinor);
+    LOG_INFO("  Actual profile mask: {}", profileMask);
 
     // Verify OpenGL version
     if (!verifyGLVersion(majorVersion, minorVersion)) {
@@ -100,6 +134,9 @@ bool GLContext::initialize(SDL_Window* window, int majorVersion, int minorVersio
         m_glContext = nullptr;
         return false;
     }
+
+    // Enable VSync by default
+    setVSync(true);
 
     // Set initialized BEFORE logging so getGLVendorString/getGLRendererString work correctly
     m_initialized = true;
