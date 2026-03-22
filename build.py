@@ -682,11 +682,6 @@ def build_main_project(script_dir: Path, build_type: str,
         for dll in angle_out_dir.glob("*.dll"):
             angle_dlls.append(dll.name)
         
-        # Also check for PDB files (debug symbols)
-        angle_pdbs = []
-        for pdb in angle_out_dir.glob("*.pdb"):
-            angle_pdbs.append(pdb.name)
-        
         if angle_dlls:
             print(f"  Copying ANGLE DLLs ({len(angle_dlls)} files):")
             for dll_name in sorted(angle_dlls):
@@ -696,15 +691,6 @@ def build_main_project(script_dir: Path, build_type: str,
                     dst.unlink()
                 shutil.copy2(str(src), str(dst))
                 print(f"    {dll_name}")
-            
-            # Copy PDB files for debugging
-            for pdb_name in sorted(angle_pdbs):
-                src = angle_out_dir / pdb_name
-                dst = build_dir / pdb_name
-                if dst.exists():
-                    dst.unlink()
-                shutil.copy2(str(src), str(dst))
-                print(f"    {pdb_name} (debug symbols)")
         else:
             print("  WARNING: No ANGLE DLLs found")
     
