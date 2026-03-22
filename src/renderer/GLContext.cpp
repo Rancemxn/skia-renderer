@@ -13,16 +13,20 @@
 // On Windows, we need to use SDL's GL function loading mechanism
 // glGetString and other GL functions may need to be loaded dynamically
 #if defined(_WIN32)
-// Store function pointers for GL functions that may need dynamic loading
-static PFNGLGETSTRINGPROC s_glGetString = nullptr;
-static PFNGLGETINTEGERVPROC s_glGetIntegerv = nullptr;
+// Define function pointer types for OpenGL functions
+// These may not be defined in all OpenGL headers
+typedef const GLubyte* (APIENTRYP PFNGLGETSTRINGPROC_LOCAL)(GLenum name);
+typedef void (APIENTRYP PFNGLGETINTEGERVPROC_LOCAL)(GLenum name, GLint* params);
+
+static PFNGLGETSTRINGPROC_LOCAL s_glGetString = nullptr;
+static PFNGLGETINTEGERVPROC_LOCAL s_glGetIntegerv = nullptr;
 
 static void initGLFunctions() {
     if (!s_glGetString) {
-        s_glGetString = (PFNGLGETSTRINGPROC)SDL_GL_GetProcAddress("glGetString");
+        s_glGetString = (PFNGLGETSTRINGPROC_LOCAL)SDL_GL_GetProcAddress("glGetString");
     }
     if (!s_glGetIntegerv) {
-        s_glGetIntegerv = (PFNGLGETINTEGERVPROC)SDL_GL_GetProcAddress("glGetIntegerv");
+        s_glGetIntegerv = (PFNGLGETINTEGERVPROC_LOCAL)SDL_GL_GetProcAddress("glGetIntegerv");
     }
 }
 
