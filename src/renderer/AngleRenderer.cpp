@@ -237,6 +237,10 @@ void AngleRenderer::setFPS(float fps) {
     m_fps = fps;
 }
 
+std::string AngleRenderer::getBackendName() const {
+    return "Ganesh ANGLE";
+}
+
 } // namespace skia_renderer
 
 #endif // USE_ANGLE
