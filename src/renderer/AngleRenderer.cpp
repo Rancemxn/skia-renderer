@@ -20,7 +20,7 @@
 
 // OpenGL ES headers (via ANGLE)
 #include <GLES3/gl3.h>
-#include <GLES3/gl3ext.h>
+#include <GLES2/gl2ext.h>
 
 namespace skia_renderer {
 
