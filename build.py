@@ -673,6 +673,19 @@ def build_main_project(script_dir: Path, build_type: str,
     print("  Building...")
     run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
     
+    # Copy ANGLE DLLs to build directory
+    if platform.system() == "Windows":
+        angle_out_dir = deps_dir / "angle" / "out" / build_type
+        angle_dlls = ["libEGL.dll", "libGLESv2.dll"]
+        for dll in angle_dlls:
+            src = angle_out_dir / dll
+            dst = build_dir / dll
+            if src.exists():
+                if dst.exists():
+                    dst.unlink()
+                shutil.copy2(str(src), str(dst))
+                print(f"  Copied: {dll}")
+    
     # Report output
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
     exe_path = build_dir / exe_name
