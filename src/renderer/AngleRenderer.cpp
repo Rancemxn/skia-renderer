@@ -13,7 +13,6 @@
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
-#include "include/gpu/GrTypes.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
@@ -133,17 +132,21 @@ bool AngleRenderer::createSurface() {
     GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeGL(
         m_width, m_height, sampleCount, stencilBits, fbInfo);
 
-    // Create Skia surface with proper properties
-    // SkSurfaceProps constructor takes flags and pixel geometry
-    SkSurfaceProps surfaceProps(0, kUnknown_SkPixelGeometry);
+    if (!backendRT.isValid()) {
+        LOG_ERROR("  Failed to create backend render target");
+        return false;
+    }
 
-    m_impl->surface = SkSurfaces::RenderTarget(
-        m_impl->grContext.get(),      // GrRecordingContext
-        skgpu::Budgeted::kYes,        // Budgeted
-        backendRT,                     // GrBackendRenderTarget
-        kRGBA_8888_SkColorType,       // SkColorType
-        nullptr,                       // SkColorSpace (null = sRGB)
-        &surfaceProps                  // SkSurfaceProps
+    // Create Skia surface wrapping the default framebuffer
+    // Use kTopLeft_GrSurfaceOrigin for EGL/ANGLE (top-left origin)
+    SkSurfaceProps surfaceProps(0, kUnknown_SkPixelGeometry);
+    m_impl->surface = SkSurfaces::WrapBackendRenderTarget(
+        m_impl->grContext.get(),
+        backendRT,
+        kTopLeft_GrSurfaceOrigin,
+        kRGBA_8888_SkColorType,
+        SkColorSpace::MakeSRGB(),
+        &surfaceProps
     );
     
     if (!m_impl->surface) {
