@@ -24,63 +24,14 @@
 // EGL header for function loading
 #include <EGL/egl.h>
 
-// Windows headers for GetProcAddress
-#if defined(_WIN32)
-#include <windows.h>
-#endif
-
 namespace skia_renderer {
-
-// Helper to create GrGLInterface using eglGetProcAddress
-static sk_sp<const GrGLInterface> create_egl_gl_interface() {
-    // Get GL version info first
-    const char* versionStr = reinterpret_cast<const char*>(glGetString(GL_VERSION));
-    const char* vendorStr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
-    const char* rendererStr = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
-    
-    LOG_INFO("  GL Version: {}", versionStr ? versionStr : "(null)");
-    LOG_INFO("  GL Vendor: {}", vendorStr ? vendorStr : "(null)");
-    LOG_INFO("  GL Renderer: {}", rendererStr ? rendererStr : "(null)");
-    
-    // Create GL interface using GrGLMakeNativeInterface
-    // On EGL/ANGLE, this should work if EGL context is current
-    auto glInterface = GrGLMakeNativeInterface();
-    
-    if (glInterface) {
-        return glInterface;
-    }
-    
-    // If GrGLMakeNativeInterface fails, try creating interface manually
-    LOG_WARN("  GrGLMakeNativeInterface failed, trying manual interface creation...");
-    
-    // Create empty interface and populate it
-    GrGLGetProc getProc = [](void* ctx, const char* name) -> GrGLFuncPtr {
-        (void)ctx;
-        // First try eglGetProcAddress
-        GrGLFuncPtr proc = reinterpret_cast<GrGLFuncPtr>(eglGetProcAddress(name));
-        if (proc) {
-            return proc;
-        }
-        // On Windows, also check if it's a standard OpenGL 1.1 function
-        // These are exported directly from opengl32.dll
-        return reinterpret_cast<GrGLFuncPtr>(
-#if defined(_WIN32)
-            GetProcAddress(GetModuleHandleA("opengl32.dll"), name)
-#else
-            nullptr
-#endif
-        );
-    };
-    
-    return GrGLInterfaces::MakeGL(getProc, nullptr);
-}
 
 struct AngleRenderer::Impl {
     sk_sp<GrDirectContext> grContext;
     sk_sp<SkSurface> surface;
 };
 
-AngleRenderer::AngleRenderer() 
+AngleRenderer::AngleRenderer()
     : m_impl(std::make_unique<Impl>())
     , m_angleContext(std::make_unique<AngleContext>())
     , m_sceneRenderer(std::make_unique<SceneRenderer>()) {
@@ -133,21 +84,29 @@ bool AngleRenderer::createSkiaContext() {
     // Ensure EGL context is current before creating GL interface
     m_angleContext->makeCurrent();
 
-    // Create GL interface using our EGL-aware helper
-    sk_sp<const GrGLInterface> glInterface = create_egl_gl_interface();
+    // Get GL version info for debugging
+    const char* versionStr = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    const char* vendorStr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+    const char* rendererStr = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+
+    LOG_INFO("  GL Version: {}", versionStr ? versionStr : "(null)");
+    LOG_INFO("  GL Vendor: {}", vendorStr ? vendorStr : "(null)");
+    LOG_INFO("  GL Renderer: {}", rendererStr ? rendererStr : "(null)");
+
+    // Create GL interface - use native interface
+    // On EGL/ANGLE, this should work if EGL context is current
+    sk_sp<const GrGLInterface> glInterface = GrGLMakeNativeInterface();
 
     if (!glInterface) {
-        LOG_ERROR("  Failed to create EGL GL interface");
+        LOG_ERROR("  Failed to create GL interface for ANGLE");
         LOG_ERROR("  This usually means the GL context is not current or GL functions cannot be loaded");
         return false;
     }
 
     // Log GL interface info
-    LOG_INFO("  GL interface created: {}", 
-              glInterface->fStandard == kGL_GrGLStandard ? "Desktop GL" : 
+    LOG_INFO("  GL interface created: {}",
+              glInterface->fStandard == kGL_GrGLStandard ? "Desktop GL" :
               glInterface->fStandard == kGLES_GrGLStandard ? "OpenGL ES" : "Unknown");
-
-    LOG_INFO("  ANGLE EGL interface successfully created");
 
     // Create context options
     GrContextOptions options;
@@ -175,6 +134,8 @@ bool AngleRenderer::createSurface() {
     // Get the default framebuffer (0 = window framebuffer)
     GLint framebuffer = m_angleContext->getCurrentFramebuffer();
 
+    LOG_INFO("  Creating Skia surface (FBO: {}, {}x{})...", framebuffer, m_width, m_height);
+
     // Create backend render target for the default framebuffer
     GrGLFramebufferInfo fbInfo;
     fbInfo.fFBOID = framebuffer;
@@ -192,6 +153,9 @@ bool AngleRenderer::createSurface() {
         return false;
     }
 
+    LOG_INFO("  Backend render target: {}x{}, stencil={}",
+             backendRT.width(), backendRT.height(), backendRT.stencilBits());
+
     // Create Skia surface wrapping the default framebuffer
     // Use kTopLeft_GrSurfaceOrigin for EGL/ANGLE (top-left origin)
     SkSurfaceProps surfaceProps(0, kUnknown_SkPixelGeometry);
@@ -203,13 +167,13 @@ bool AngleRenderer::createSurface() {
         SkColorSpace::MakeSRGB(),
         &surfaceProps
     );
-    
+
     if (!m_impl->surface) {
         LOG_ERROR("  Failed to create Skia surface");
         return false;
     }
 
-    LOG_INFO("  Skia surface created ({}x{}, FBO {})", m_width, m_height, framebuffer);
+    LOG_INFO("  Skia surface created successfully");
     return true;
 }
 
@@ -222,6 +186,11 @@ void AngleRenderer::shutdown() {
 
     LOG_INFO("Shutting down ANGLE renderer...");
 
+    // Wait for GPU to finish
+    if (m_impl->grContext) {
+        m_impl->grContext->flushAndSubmit();
+    }
+
     destroySurface();
     m_impl->grContext.reset();
     m_angleContext.reset();
@@ -233,11 +202,13 @@ void AngleRenderer::shutdown() {
 void AngleRenderer::resize(int width, int height) {
     m_width = width;
     m_height = height;
-    
+
     // Recreate surface for new size
-    destroySurface();
-    createSurface();
-    
+    if (m_initialized && m_impl->grContext) {
+        destroySurface();
+        createSurface();
+    }
+
     LOG_DEBUG("ANGLE renderer resized to {}x{}", width, height);
 }
 
@@ -248,7 +219,10 @@ bool AngleRenderer::beginFrame() {
 
     // Make ANGLE context current
     m_angleContext->makeCurrent();
-    
+
+    // Set viewport
+    glViewport(0, 0, m_width, m_height);
+
     return true;
 }
 
@@ -283,9 +257,12 @@ void AngleRenderer::render() {
     std::string backendInfo = "ANGLE: " + m_angleContext->getAngleBackendString();
 
     backendInfo += " | " + m_angleContext->getGLRendererString();
-    
+
     // Render the scene (rendererName is "Skia Ganesh" for OpenGL ES via ANGLE)
     m_sceneRenderer->render(canvas, m_width, m_height, backendInfo, "Skia Ganesh");
+
+    // Flush after each render call
+    m_impl->grContext->flush();
 }
 
 void AngleRenderer::setFPS(float fps) {
