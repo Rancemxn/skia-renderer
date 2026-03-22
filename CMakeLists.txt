@@ -51,7 +51,6 @@ message(STATUS "Vulkan SDK: ${Vulkan_SDK}")
 # ========================================
 find_package(OpenGL REQUIRED)
 message(STATUS "OpenGL Library: ${OPENGL_LIBRARIES}")
-message(STATUS "OpenGL Include Dir: ${OPENGL_INCLUDE_DIR}")
 
 # ========================================
 # SDL3
@@ -617,8 +616,8 @@ endif()
 
 # libEGL and libGLESv2
 if(WIN32)
-    set(ANGLE_EGL_LIB_NAMES "libEGL" "EGL")
-    set(ANGLE_GLES_LIB_NAMES "libGLESv2" "GLESv2")
+    set(ANGLE_EGL_LIB_NAMES "libEGL.dll" "libEGL" "EGL")
+    set(ANGLE_GLES_LIB_NAMES "libGLESv2.dll" "libGLESv2" "GLESv2")
     set(ANGLE_LIB_EXT ".lib")
 else()
     set(ANGLE_EGL_LIB_NAMES "libEGL")
@@ -836,7 +835,7 @@ message(STATUS "")
 message(STATUS "Graphics APIs:")
 message(STATUS "  Vulkan:     ${Vulkan_SDK}")
 message(STATUS "  OpenGL:     ${OPENGL_LIBRARIES}")
-message(STATUS "  ANGLE:      Enabled")
+message(STATUS "  ANGLE:      ${ANGLE_INCLUDE_DIR}")
 message(STATUS "")
 message(STATUS "Renderers:")
 message(STATUS "  Vulkan:     Skia Graphite")
