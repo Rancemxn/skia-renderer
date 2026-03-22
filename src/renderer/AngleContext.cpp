@@ -14,20 +14,50 @@
 namespace skia_renderer {
 
 // Platform-specific EGL extensions and defines
+// These are the official ANGLE platform type values
 #if defined(_WIN32)
+#ifndef EGL_PLATFORM_ANGLE_ANGLE
 #define EGL_PLATFORM_ANGLE_ANGLE 0x3202
+#endif
+#ifndef EGL_PLATFORM_ANGLE_TYPE_ANGLE
 #define EGL_PLATFORM_ANGLE_TYPE_ANGLE 0x3203
+#endif
+#ifndef EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
 #define EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE 0x3450
+#endif
+#ifndef EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE
 #define EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE 0x3451
+#endif
+#ifndef EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE
 #define EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE 0x3452
+#endif
+#ifndef EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE
 #define EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE 0x3453
+#endif
+#ifndef EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE
 #define EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE 0x3454
+#endif
+#ifndef EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE
 #define EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE 0x3455
+#endif
+#ifndef EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE
+#define EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE 0x3456
+#endif
 #endif
 
 // EGL extension for context minor version (may not be defined in all headers)
 #ifndef EGL_CONTEXT_MINOR_VERSION_KHR
 #define EGL_CONTEXT_MINOR_VERSION_KHR 0x30FB
+#endif
+#ifndef EGL_CONTEXT_MAJOR_VERSION_KHR
+#define EGL_CONTEXT_MAJOR_VERSION_KHR 0x3098
+#endif
+// EGL create context flags
+#ifndef EGL_CONTEXT_FLAGS_KHR
+#define EGL_CONTEXT_FLAGS_KHR 0x30FC
+#endif
+#ifndef EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR
+#define EGL_CONTEXT_OPENGL_DEBUG_BIT_KHR 0x00000001
 #endif
 
 AngleContext::AngleContext() = default;
@@ -40,6 +70,7 @@ AngleContext::~AngleContext() {
 
 bool AngleContext::chooseConfig() {
     // EGL config attributes for OpenGL ES 3.x
+    // We request RGBA8888, 24-bit depth, 8-bit stencil
     const EGLint configAttributes[] = {
         EGL_RED_SIZE, 8,
         EGL_GREEN_SIZE, 8,
@@ -50,6 +81,7 @@ bool AngleContext::chooseConfig() {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
         EGL_BUFFER_SIZE, 32,
+        EGL_COLOR_BUFFER_TYPE, EGL_RGB_BUFFER,
         EGL_NONE
     };
 
@@ -60,39 +92,106 @@ bool AngleContext::chooseConfig() {
     }
 
     if (numConfigs == 0) {
-        LOG_ERROR("  No matching EGL configs found");
-        return false;
+        // Try with more permissive attributes (ES2 compatible)
+        LOG_WARN("  No ES3 config found, trying ES2 compatible config...");
+        const EGLint configAttributesES2[] = {
+            EGL_RED_SIZE, 8,
+            EGL_GREEN_SIZE, 8,
+            EGL_BLUE_SIZE, 8,
+            EGL_ALPHA_SIZE, 8,
+            EGL_DEPTH_SIZE, 24,
+            EGL_STENCIL_SIZE, 8,
+            EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+            EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+            EGL_NONE
+        };
+        
+        if (!eglChooseConfig(m_display, configAttributesES2, &m_config, 1, &numConfigs)) {
+            LOG_ERROR("  Failed to choose ES2 EGL config: 0x{:X}", eglGetError());
+            return false;
+        }
+        
+        if (numConfigs == 0) {
+            LOG_ERROR("  No matching EGL configs found");
+            return false;
+        }
     }
+
+    // Log the chosen config details
+    EGLint red, green, blue, alpha, depth, stencil;
+    eglGetConfigAttrib(m_display, m_config, EGL_RED_SIZE, &red);
+    eglGetConfigAttrib(m_display, m_config, EGL_GREEN_SIZE, &green);
+    eglGetConfigAttrib(m_display, m_config, EGL_BLUE_SIZE, &blue);
+    eglGetConfigAttrib(m_display, m_config, EGL_ALPHA_SIZE, &alpha);
+    eglGetConfigAttrib(m_display, m_config, EGL_DEPTH_SIZE, &depth);
+    eglGetConfigAttrib(m_display, m_config, EGL_STENCIL_SIZE, &stencil);
+    
+    LOG_INFO("  EGL config chosen: R{}G{}B{}A{} D{} S{}", red, green, blue, alpha, depth, stencil);
 
     return true;
 }
 
 bool AngleContext::createContext(int majorVersion, int minorVersion) {
-    // Context attributes for OpenGL ES 3.x
-    const EGLint contextAttributes[] = {
-        EGL_CONTEXT_CLIENT_VERSION, majorVersion,
-        EGL_CONTEXT_MINOR_VERSION_KHR, minorVersion,
+    // Check for EGL_KHR_create_context extension
+    const char* displayExtensions = eglQueryString(m_display, EGL_EXTENSIONS);
+    bool hasCreateContextKHR = displayExtensions && strstr(displayExtensions, "EGL_KHR_create_context");
+    
+    if (hasCreateContextKHR) {
+        LOG_DEBUG("  EGL_KHR_create_context extension available");
+    }
+
+    // Try creating context with requested version (ES 3.x)
+    // The EGL_CONTEXT_MINOR_VERSION_KHR requires EGL_KHR_create_context extension
+    if (hasCreateContextKHR && majorVersion >= 3) {
+        const EGLint contextAttributes[] = {
+            EGL_CONTEXT_CLIENT_VERSION, majorVersion,
+            EGL_CONTEXT_MINOR_VERSION_KHR, minorVersion,
+            EGL_CONTEXT_FLAGS_KHR, 0,
+            EGL_NONE
+        };
+
+        m_context = eglCreateContext(m_display, m_config, EGL_NO_CONTEXT, contextAttributes);
+        if (m_context != EGL_NO_CONTEXT) {
+            LOG_INFO("  Created OpenGL ES {}.{} context", majorVersion, minorVersion);
+            return true;
+        }
+        
+        EGLint error = eglGetError();
+        LOG_DEBUG("  ES {}.{} context creation failed (error 0x{:X})", majorVersion, minorVersion, error);
+    }
+
+    // Try with just major version (ES 3.0)
+    if (majorVersion >= 3) {
+        const EGLint contextAttributesES3[] = {
+            EGL_CONTEXT_CLIENT_VERSION, 3,
+            EGL_NONE
+        };
+        
+        m_context = eglCreateContext(m_display, m_config, EGL_NO_CONTEXT, contextAttributesES3);
+        if (m_context != EGL_NO_CONTEXT) {
+            LOG_INFO("  Created OpenGL ES 3.0 context");
+            return true;
+        }
+        
+        EGLint error = eglGetError();
+        LOG_DEBUG("  ES 3.0 context creation failed (error 0x{:X})", error);
+    }
+
+    // Fallback to ES 2.0
+    const EGLint contextAttributesES2[] = {
+        EGL_CONTEXT_CLIENT_VERSION, 2,
         EGL_NONE
     };
-
-    m_context = eglCreateContext(m_display, m_config, EGL_NO_CONTEXT, contextAttributes);
+    
+    m_context = eglCreateContext(m_display, m_config, EGL_NO_CONTEXT, contextAttributesES2);
     if (m_context == EGL_NO_CONTEXT) {
         EGLint error = eglGetError();
         LOG_ERROR("  Failed to create EGL context: 0x{:X}", error);
-        
-        // Try with simpler attributes (ES 2.0 fallback)
-        const EGLint contextAttributesES2[] = {
-            EGL_CONTEXT_CLIENT_VERSION, 2,
-            EGL_NONE
-        };
-        m_context = eglCreateContext(m_display, m_config, EGL_NO_CONTEXT, contextAttributesES2);
-        if (m_context == EGL_NO_CONTEXT) {
-            LOG_ERROR("  Failed to create EGL ES 2.0 context as well");
-            return false;
-        }
-        LOG_WARN("  Created ES 2.0 context instead of ES {}.{}", majorVersion, minorVersion);
+        LOG_ERROR("  All context creation attempts failed");
+        return false;
     }
-
+    
+    LOG_WARN("  Created ES 2.0 context (fallback) instead of ES {}.{}", majorVersion, minorVersion);
     return true;
 }
 
@@ -148,33 +247,72 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
     // Check for ANGLE platform extension
     const char* clientExtensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
     bool hasAnglePlatform = clientExtensions && strstr(clientExtensions, "EGL_ANGLE_platform_angle");
+    bool hasAngleDeviceCreation = clientExtensions && strstr(clientExtensions, "EGL_ANGLE_device_creation");
     
     if (hasAnglePlatform) {
         LOG_INFO("  EGL_ANGLE_platform_angle extension available");
     }
+    if (hasAngleDeviceCreation) {
+        LOG_INFO("  EGL_ANGLE_device_creation extension available");
+    }
+
+    // Log available extensions for debugging
+    if (clientExtensions) {
+        LOG_DEBUG("  EGL client extensions: {}", clientExtensions);
+    }
 
 #if defined(_WIN32)
-    // Try eglGetPlatformDisplay first (EGL 1.5)
-    // For ANGLE, native_display should be EGL_DEFAULT_DISPLAY (not window handle)
+    // Try different methods to get the EGL display
+    // Method 1: Use eglGetPlatformDisplay with ANGLE platform (EGL 1.5+)
     if (hasAnglePlatform) {
-        // Try D3D11 backend (most reliable on Windows)
-        EGLAttrib displayAttributes[] = {
+        // Try D3D11 backend first (most reliable on Windows)
+        EGLAttrib displayAttributesD3D11[] = {
             EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE,
+            EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE, EGL_FALSE,
             EGL_NONE
         };
         
         LOG_INFO("  Trying ANGLE D3D11 backend via eglGetPlatformDisplay...");
         m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE, 
-            reinterpret_cast<void*>(EGL_DEFAULT_DISPLAY), displayAttributes);
+            reinterpret_cast<void*>(EGL_DEFAULT_DISPLAY), displayAttributesD3D11);
         
         if (m_display == EGL_NO_DISPLAY) {
             EGLint error = eglGetError();
-            LOG_WARN("  D3D11 backend failed (error 0x{:X}), trying OpenGL...", error);
+            LOG_DEBUG("  D3D11 backend returned no display (error 0x{:X})", error);
+        } else {
+            LOG_INFO("  D3D11 platform display obtained successfully");
+        }
+        
+        // If D3D11 failed, try Vulkan backend
+        if (m_display == EGL_NO_DISPLAY) {
+            EGLAttrib displayAttributesVulkan[] = {
+                EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE,
+                EGL_NONE
+            };
             
-            // Try OpenGL backend as fallback
-            displayAttributes[1] = EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE;
+            LOG_INFO("  Trying ANGLE Vulkan backend...");
             m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
-                reinterpret_cast<void*>(EGL_DEFAULT_DISPLAY), displayAttributes);
+                reinterpret_cast<void*>(EGL_DEFAULT_DISPLAY), displayAttributesVulkan);
+            
+            if (m_display != EGL_NO_DISPLAY) {
+                LOG_INFO("  Vulkan platform display obtained successfully");
+            }
+        }
+        
+        // If both failed, try OpenGL backend
+        if (m_display == EGL_NO_DISPLAY) {
+            EGLAttrib displayAttributesGL[] = {
+                EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE,
+                EGL_NONE
+            };
+            
+            LOG_INFO("  Trying ANGLE OpenGL backend...");
+            m_display = eglGetPlatformDisplay(EGL_PLATFORM_ANGLE_ANGLE,
+                reinterpret_cast<void*>(EGL_DEFAULT_DISPLAY), displayAttributesGL);
+            
+            if (m_display != EGL_NO_DISPLAY) {
+                LOG_INFO("  OpenGL platform display obtained successfully");
+            }
         }
     }
 #endif
@@ -199,6 +337,12 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
 
     LOG_INFO("  EGL initialized: {}.{}", major, minor);
     logEGLConfig();
+
+    // Bind OpenGL ES API
+    if (!eglBindAPI(EGL_OPENGL_ES_API)) {
+        LOG_WARN("  Failed to bind OpenGL ES API: 0x{:X}", eglGetError());
+        // Continue anyway, might still work
+    }
 
     // Choose config
     if (!chooseConfig()) {

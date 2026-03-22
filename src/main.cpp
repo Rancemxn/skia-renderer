@@ -79,6 +79,43 @@ GLVersion parseGLVersion(const std::string& str) {
     return version;
 }
 
+// Helper to parse OpenGL ES version string (e.g., "3.0", "3.1", "3.2")
+// OpenGL ES versions: 2.0, 3.0, 3.1, 3.2 (no 4.x)
+GLVersion parseGLESVersion(const std::string& str) {
+    GLVersion version{3, 0};  // Default to OpenGL ES 3.0 (most compatible)
+    
+    // Find the dot separator
+    size_t dotPos = str.find('.');
+    if (dotPos != std::string::npos) {
+        try {
+            version.major = std::stoi(str.substr(0, dotPos));
+            version.minor = std::stoi(str.substr(dotPos + 1));
+        } catch (...) {
+            // Invalid format, use defaults
+            version.major = 3;
+            version.minor = 0;
+        }
+    } else {
+        // No dot, try to parse as single number
+        try {
+            version.major = std::stoi(str);
+            version.minor = 0;
+        } catch (...) {
+            version.major = 3;
+            version.minor = 0;
+        }
+    }
+    
+    // Clamp to valid OpenGL ES versions (2.0 - 3.2)
+    if (version.major < 2) version.major = 2;
+    if (version.major > 3) version.major = 3;
+    if (version.major == 3 && version.minor > 2) version.minor = 2;
+    if (version.major == 2) version.minor = 0;  // ES 2.0 only
+    if (version.minor < 0) version.minor = 0;
+    
+    return version;
+}
+
 // Helper to parse backend string
 skia_renderer::BackendType parseBackend(const std::string& str) {
     std::string lower = str;
@@ -159,9 +196,10 @@ int main(int argc, char* argv[]) {
         backendConfig.vulkanMajor = vulkanVersion.major;
         backendConfig.vulkanMinor = vulkanVersion.minor;
     } else if (backendConfig.type == skia_renderer::BackendType::ANGLE) {
-        auto glVersion = parseGLVersion(glVersionStr);
-        backendConfig.angleMajor = glVersion.major;
-        backendConfig.angleMinor = glVersion.minor;
+        // Use OpenGL ES version parser for ANGLE (ES 2.0 - 3.2)
+        auto glesVersion = parseGLESVersion(glVersionStr);
+        backendConfig.angleMajor = glesVersion.major;
+        backendConfig.angleMinor = glesVersion.minor;
     } else {
         auto glVersion = parseGLVersion(glVersionStr);
         backendConfig.glMajor = glVersion.major;

@@ -23,8 +23,25 @@
 
 // EGL header for function loading
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 
 namespace skia_renderer {
+
+// Custom GL function loader using EGL
+// This is required for ANGLE because GrGLMakeNativeInterface() uses platform-specific
+// mechanisms (wglGetProcAddress, glXGetProcAddress) which don't work with EGL contexts.
+static GrGLFuncPtr egl_get_gl_proc(void* ctx, const char name[]) {
+    // eglGetProcAddress can load both core and extension functions
+    GrGLFuncPtr proc = (GrGLFuncPtr)eglGetProcAddress(name);
+    if (proc) {
+        return proc;
+    }
+    
+    // For OpenGL ES core functions on some platforms, eglGetProcAddress may return NULL
+    // In this case, the function might already be linked directly
+    // We return NULL and let Skia handle it (it will use its own fallbacks)
+    return nullptr;
+}
 
 struct AngleRenderer::Impl {
     sk_sp<GrDirectContext> grContext;
@@ -93,14 +110,27 @@ bool AngleRenderer::createSkiaContext() {
     LOG_INFO("  GL Vendor: {}", vendorStr ? vendorStr : "(null)");
     LOG_INFO("  GL Renderer: {}", rendererStr ? rendererStr : "(null)");
 
-    // Create GL interface - use native interface
-    // On EGL/ANGLE, this should work if EGL context is current
-    sk_sp<const GrGLInterface> glInterface = GrGLMakeNativeInterface();
+    // Create GL interface using EGL function loader
+    // GrGLMakeNativeInterface() doesn't work with ANGLE/EGL because it uses
+    // platform-specific mechanisms (wglGetProcAddress, glXGetProcAddress) 
+    // that don't know about EGL contexts.
+    // We use GrGLMakeAssembledInterface() with eglGetProcAddress() instead.
+    sk_sp<const GrGLInterface> glInterface = GrGLMakeAssembledInterface(
+        nullptr,  // context pointer (not used)
+        egl_get_gl_proc,
+        GrGLInterface::kGLES_EnableOption  // We're using OpenGL ES
+    );
 
     if (!glInterface) {
         LOG_ERROR("  Failed to create GL interface for ANGLE");
         LOG_ERROR("  This usually means the GL context is not current or GL functions cannot be loaded");
-        return false;
+        
+        // Try again with default options as fallback
+        glInterface = GrGLMakeAssembledInterface(nullptr, egl_get_gl_proc, nullptr);
+        if (!glInterface) {
+            LOG_ERROR("  Fallback GL interface creation also failed");
+            return false;
+        }
     }
 
     // Log GL interface info
