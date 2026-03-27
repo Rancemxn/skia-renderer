@@ -68,9 +68,9 @@ bool AngleRenderer::initialize(SDL_Window* window, int width, int height, const 
 
     LOG_INFO("Initializing Skia Ganesh ANGLE renderer...");
 
-    // Create ANGLE EGL context
+    // Create ANGLE EGL context with specified backend
     m_angleContext = std::make_unique<AngleContext>();
-    if (!m_angleContext->initialize(window, config.angleMajor, config.angleMinor)) {
+    if (!m_angleContext->initialize(window, config.angleMajor, config.angleMinor, config.angleBackend)) {
         LOG_ERROR("Failed to create ANGLE context");
         return false;
     }
@@ -93,6 +93,9 @@ bool AngleRenderer::initialize(SDL_Window* window, int width, int height, const 
     m_initialized = true;
     LOG_INFO("Skia Ganesh ANGLE renderer initialized ({}x{})", width, height);
     LOG_INFO("  ANGLE Backend: {}", m_angleContext->getAngleBackendString());
+    LOG_INFO("  OpenGL ES Version: {}.{}", 
+             m_angleContext->getGLMajorVersion(), 
+             m_angleContext->getGLMinorVersion());
     return true;
 }
 

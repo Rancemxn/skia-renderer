@@ -131,6 +131,33 @@ skia_renderer::BackendType parseBackend(const std::string& str) {
     return skia_renderer::BackendType::Vulkan;
 }
 
+// Helper to parse ANGLE backend string
+skia_renderer::AngleBackendType parseAngleBackend(const std::string& str) {
+    std::string lower = str;
+    for (auto& c : lower) c = std::tolower(c);
+    
+    if (lower == "vulkan" || lower == "vk") {
+        return skia_renderer::AngleBackendType::Vulkan;
+    }
+    if (lower == "d3d11" || lower == "d3d" || lower == "direct3d" || lower == "dx11") {
+        return skia_renderer::AngleBackendType::D3D11;
+    }
+    if (lower == "d3d9" || lower == "dx9") {
+        return skia_renderer::AngleBackendType::D3D9;
+    }
+    if (lower == "metal" || lower == "mtl") {
+        return skia_renderer::AngleBackendType::Metal;
+    }
+    if (lower == "opengl" || lower == "gl") {
+        return skia_renderer::AngleBackendType::OpenGL;
+    }
+    if (lower == "opengles" || lower == "gles") {
+        return skia_renderer::AngleBackendType::OpenGLES;
+    }
+    // Default to Auto
+    return skia_renderer::AngleBackendType::Auto;
+}
+
 int main(int argc, char* argv[]) {
     // ========================================
     // CLI11 Setup
@@ -144,6 +171,7 @@ int main(int argc, char* argv[]) {
     std::string vulkanVersionStr = "1.3";
     std::string glVersionStr = "4.6";
     std::string backendStr = "vulkan";
+    std::string angleBackendStr = "auto";
     
     app.add_option("-W,--width", width, "Window width")->check(CLI::Range(100, 7680));
     app.add_option("-H,--height", height, "Window height")->check(CLI::Range(100, 4320));
@@ -154,13 +182,19 @@ int main(int argc, char* argv[]) {
     app.add_option("-b,--backend", backendStr, 
                    "Rendering backend: 'vulkan' (Graphite), 'opengl' (Ganesh), or 'angle' (OpenGL ES via ANGLE)");
     
+    // ANGLE-specific options
+    app.add_option("--angle-backend", angleBackendStr, 
+                   "ANGLE underlying backend: 'auto', 'vulkan', 'd3d11', 'd3d9', 'metal', 'opengl', 'opengles'. "
+                   "Vulkan backend supports OpenGL ES 3.1, others support ES 3.0.");
+    
     // Vulkan-specific options
     app.add_option("--vulkan-version", vulkanVersionStr, 
                    "Vulkan API version (e.g., 1.3, 1.2, 1.1). Auto-downgrades if not available.");
     
     // OpenGL-specific options
     app.add_option("--gl-version", glVersionStr, 
-                   "OpenGL version (e.g., 3.3, 4.1, 4.6). Default: 3.3");
+                   "OpenGL/OpenGL ES version (e.g., 3.3, 4.1, 4.6 for OpenGL; 3.0, 3.1, 3.2 for ANGLE). "
+                   "For ANGLE: Vulkan backend supports ES 3.1, others support ES 3.0.");
     
     // Parse command line
     try {
@@ -173,6 +207,7 @@ int main(int argc, char* argv[]) {
     if (show_version) {
         std::cout << "Skia Renderer v1.2.0" << std::endl;
         std::cout << "Supported backends: Vulkan (Graphite), OpenGL (Ganesh), ANGLE (OpenGL ES)" << std::endl;
+        std::cout << "ANGLE backends: Auto, Vulkan, D3D11, D3D9, Metal, OpenGL, OpenGL ES" << std::endl;
         return 0;
     }
     
@@ -190,16 +225,43 @@ int main(int argc, char* argv[]) {
     // ========================================
     skia_renderer::BackendConfig backendConfig;
     backendConfig.type = parseBackend(backendStr);
+    backendConfig.angleBackend = parseAngleBackend(angleBackendStr);
     
     if (backendConfig.type == skia_renderer::BackendType::Vulkan) {
         auto vulkanVersion = parseVulkanVersion(vulkanVersionStr);
         backendConfig.vulkanMajor = vulkanVersion.major;
         backendConfig.vulkanMinor = vulkanVersion.minor;
     } else if (backendConfig.type == skia_renderer::BackendType::ANGLE) {
-        // Use OpenGL ES version parser for ANGLE (ES 2.0 - 3.2)
+        // Determine OpenGL ES version based on ANGLE backend
+        // Vulkan backend: ES 3.1 is widely supported (ES 3.2 may not be fully conformant)
+        // Other backends (D3D11, OpenGL, etc.) typically support ES 3.0
+        
+        // Parse user-requested version first
         auto glesVersion = parseGLESVersion(glVersionStr);
-        backendConfig.angleMajor = glesVersion.major;
-        backendConfig.angleMinor = glesVersion.minor;
+        
+        // Auto-select optimal ES version based on ANGLE backend
+        if (backendConfig.angleBackend == skia_renderer::AngleBackendType::Auto ||
+            backendConfig.angleBackend == skia_renderer::AngleBackendType::Vulkan) {
+            // Vulkan backend: prefer ES 3.1 (ES 3.2 may not be fully conformant)
+            // This enables compute shaders while maintaining compatibility
+            if (glesVersion.major < 3 || (glesVersion.major == 3 && glesVersion.minor < 1)) {
+                LOG_INFO("ANGLE Vulkan backend prefers OpenGL ES 3.1 for compatibility, upgrading from ES {}.{}", 
+                         glesVersion.major, glesVersion.minor);
+                backendConfig.angleMajor = 3;
+                backendConfig.angleMinor = 1;
+            } else {
+                backendConfig.angleMajor = glesVersion.major;
+                backendConfig.angleMinor = glesVersion.minor;
+            }
+        } else {
+            // D3D11, Metal, OpenGL backends: use ES 3.0 (most compatible)
+            if (glesVersion.major >= 3 && glesVersion.minor > 0) {
+                LOG_INFO("ANGLE {} backend works best with OpenGL ES 3.0, using that instead of ES {}.{}",
+                         backendConfig.getAngleBackendString(), glesVersion.major, glesVersion.minor);
+            }
+            backendConfig.angleMajor = 3;
+            backendConfig.angleMinor = 0;
+        }
     } else {
         auto glVersion = parseGLVersion(glVersionStr);
         backendConfig.glMajor = glVersion.major;
@@ -217,7 +279,8 @@ int main(int argc, char* argv[]) {
     if (backendConfig.type == skia_renderer::BackendType::Vulkan) {
         LOG_INFO("Requested Vulkan version: {}.{}", backendConfig.vulkanMajor, backendConfig.vulkanMinor);
     } else if (backendConfig.type == skia_renderer::BackendType::ANGLE) {
-        LOG_INFO("Requested ANGLE OpenGL ES version: {}.{}", backendConfig.angleMajor, backendConfig.angleMinor);
+        LOG_INFO("Requested ANGLE backend: {}", backendConfig.getAngleBackendString());
+        LOG_INFO("Requested OpenGL ES version: {}.{}", backendConfig.angleMajor, backendConfig.angleMinor);
     } else {
         LOG_INFO("Requested OpenGL version: {}.{}", backendConfig.glMajor, backendConfig.glMinor);
     }

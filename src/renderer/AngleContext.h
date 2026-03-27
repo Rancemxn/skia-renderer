@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include "IRenderer.h"
 
 namespace skia_renderer {
 
@@ -38,10 +39,12 @@ public:
      * @brief Initialize ANGLE EGL context
      * @param window SDL window
      * @param majorVersion OpenGL ES major version (e.g., 3)
-     * @param minorVersion OpenGL ES minor version (e.g., 0)
+     * @param minorVersion OpenGL ES minor version (e.g., 0 or 1)
+     * @param angleBackend ANGLE backend type selection (Auto, Vulkan, D3D11, etc.)
      * @return true if initialization succeeded
      */
-    bool initialize(SDL_Window* window, int majorVersion = 3, int minorVersion = 0);
+    bool initialize(SDL_Window* window, int majorVersion = 3, int minorVersion = 0,
+                    AngleBackendType angleBackend = AngleBackendType::Auto);
 
     /**
      * @brief Shutdown ANGLE context
@@ -108,6 +111,16 @@ public:
      * @brief Get current framebuffer ID (usually 0 for default)
      */
     int getCurrentFramebuffer() const;
+    
+    /**
+     * @brief Get OpenGL ES major version
+     */
+    int getGLMajorVersion() const { return m_glMajorVersion; }
+    
+    /**
+     * @brief Get OpenGL ES minor version
+     */
+    int getGLMinorVersion() const { return m_glMinorVersion; }
 
     /**
      * @brief Get window width
@@ -125,10 +138,28 @@ public:
     void resize(int width, int height);
 
     /**
-     * @brief Get the underlying ANGLE backend type
-     * @return String describing the backend (Vulkan, D3D11, Metal, etc.)
+     * @brief Get the underlying ANGLE backend type that was detected
+     * @return String like "ANGLE (Vulkan)", "ANGLE (D3D11)", etc.
      */
     std::string getAngleBackendString() const;
+    
+    /**
+     * @brief Get the requested ANGLE backend type
+     * @return The backend type that was requested
+     */
+    AngleBackendType getRequestedBackendType() const { return m_requestedBackend; }
+    
+    /**
+     * @brief Get the detected ANGLE backend type
+     * @return The backend type that was actually detected/used
+     */
+    AngleBackendType getDetectedBackendType() const { return m_detectedBackend; }
+    
+    /**
+     * @brief Check if the backend is Vulkan-based
+     * @return true if using Vulkan backend
+     */
+    bool isVulkanBackend() const;
 
 private:
     bool chooseConfig();
@@ -136,6 +167,7 @@ private:
     bool createSurface();
     bool verifyGLVersion(int majorVersion, int minorVersion);
     void logEGLConfig();
+    const char* angleBackendToString(AngleBackendType backend) const;
 
     SDL_Window* m_window = nullptr;
     EGLNativeWindowType m_nativeWindow = nullptr;
@@ -148,6 +180,8 @@ private:
     int m_height = 0;
     int m_glMajorVersion = 0;
     int m_glMinorVersion = 0;
+    AngleBackendType m_requestedBackend = AngleBackendType::Auto;
+    AngleBackendType m_detectedBackend = AngleBackendType::Auto;
 };
 
 } // namespace skia_renderer

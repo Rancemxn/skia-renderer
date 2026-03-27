@@ -15,6 +15,17 @@ enum class BackendType {
     ANGLE       // Ganesh OpenGL ES via ANGLE (translates to Vulkan/D3D11/Metal)
 };
 
+// ANGLE backend type enumeration
+enum class AngleBackendType {
+    Auto,       // Auto-detect (try Vulkan first, then D3D11, then OpenGL)
+    Vulkan,     // ANGLE Vulkan backend
+    D3D11,      // ANGLE Direct3D 11 backend (Windows only)
+    D3D9,       // ANGLE Direct3D 9 backend (Windows only)
+    Metal,      // ANGLE Metal backend (macOS/iOS only)
+    OpenGL,     // ANGLE OpenGL backend
+    OpenGLES    // ANGLE OpenGL ES backend
+};
+
 // Backend configuration
 struct BackendConfig {
     BackendType type = BackendType::Vulkan;
@@ -24,6 +35,7 @@ struct BackendConfig {
     int glMinor = 3;
     int angleMajor = 3;   // OpenGL ES 3.0 (ANGLE)
     int angleMinor = 0;
+    AngleBackendType angleBackend = AngleBackendType::Auto;  // ANGLE backend selection
     
     std::string toString() const {
         switch (type) {
@@ -33,6 +45,19 @@ struct BackendConfig {
                 return "OpenGL " + std::to_string(glMajor) + "." + std::to_string(glMinor);
             case BackendType::ANGLE:
                 return "ANGLE (OpenGL ES " + std::to_string(angleMajor) + "." + std::to_string(angleMinor) + ")";
+        }
+        return "Unknown";
+    }
+    
+    std::string getAngleBackendString() const {
+        switch (angleBackend) {
+            case AngleBackendType::Auto:     return "Auto";
+            case AngleBackendType::Vulkan:   return "Vulkan";
+            case AngleBackendType::D3D11:    return "D3D11";
+            case AngleBackendType::D3D9:     return "D3D9";
+            case AngleBackendType::Metal:    return "Metal";
+            case AngleBackendType::OpenGL:   return "OpenGL";
+            case AngleBackendType::OpenGLES: return "OpenGL ES";
         }
         return "Unknown";
     }
