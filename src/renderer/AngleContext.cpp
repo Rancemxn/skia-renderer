@@ -469,7 +469,16 @@ void AngleContext::shutdown() {
 
 void AngleContext::swapBuffers() {
     if (m_display != EGL_NO_DISPLAY && m_surface != EGL_NO_SURFACE) {
-        eglSwapBuffers(m_display, m_surface);
+        EGLBoolean result = eglSwapBuffers(m_display, m_surface);
+        if (result != EGL_TRUE) {
+            EGLint error = eglGetError();
+            // Only log the first few errors to avoid spam
+            static int swapErrorCount = 0;
+            if (swapErrorCount < 5) {
+                LOG_ERROR("eglSwapBuffers failed: 0x{:X}", error);
+                swapErrorCount++;
+            }
+        }
     }
 }
 
