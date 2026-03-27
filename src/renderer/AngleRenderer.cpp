@@ -37,9 +37,23 @@ namespace skia_renderer {
 //
 // ANGLE's eglGetProcAddress() returns valid function pointers for ALL GL functions
 // (both core and extension), unlike some other EGL implementations.
+// This is documented in ANGLE's implementation.
 static GrGLFuncPtr egl_get_gl_proc(void* ctx, const char name[]) {
     (void)ctx;  // unused
-    return (GrGLFuncPtr)eglGetProcAddress(name);
+
+    // ANGLE's eglGetProcAddress works for all GL functions (core + extensions)
+    GrGLFuncPtr proc = (GrGLFuncPtr)eglGetProcAddress(name);
+
+    // Debug: log failed function lookups (only for first few)
+    if (!proc) {
+        static int failCount = 0;
+        if (failCount < 10) {
+            LOG_WARN("  Failed to get GL function: {}", name ? name : "(null)");
+            failCount++;
+        }
+    }
+
+    return proc;
 }
 
 struct AngleRenderer::Impl {
@@ -109,6 +123,10 @@ bool AngleRenderer::createSkiaContext() {
     LOG_INFO("  GL Vendor: {}", vendorStr ? vendorStr : "(null)");
     LOG_INFO("  GL Renderer: {}", rendererStr ? rendererStr : "(null)");
 
+    // Verify some critical GL functions are available
+    auto testFunc = (void(*)())eglGetProcAddress("glClear");
+    LOG_INFO("  Test eglGetProcAddress(glClear): {}", testFunc ? "OK" : "FAILED");
+
     // Create GL interface for ANGLE/EGL
     // GrGLMakeNativeInterface() uses platform-specific loaders (wglGetProcAddress on Windows)
     // which don't work with EGL contexts. We use GrGLMakeAssembledInterface with our
@@ -130,6 +148,7 @@ bool AngleRenderer::createSkiaContext() {
         return false;
     }
 
+    // Log GL interface info
     LOG_INFO("  GL interface created: {}",
               glInterface->fStandard == kGL_GrGLStandard ? "Desktop GL" :
               glInterface->fStandard == kGLES_GrGLStandard ? "OpenGL ES" : "Unknown");
@@ -162,9 +181,21 @@ bool AngleRenderer::createSurface() {
 
     LOG_INFO("  Creating Skia surface (FBO: {}, {}x{})...", framebuffer, m_width, m_height);
 
+    // Determine the correct format for the render target
+    // For ANGLE on Windows with D3D11/Vulkan backend, BGRA is often the native format
+    // But we need to check what the EGL surface actually uses
+    GLint redBits = 0, greenBits = 0, blueBits = 0, alphaBits = 0;
+    glGetIntegerv(GL_RED_BITS, &redBits);
+    glGetIntegerv(GL_GREEN_BITS, &greenBits);
+    glGetIntegerv(GL_BLUE_BITS, &blueBits);
+    glGetIntegerv(GL_ALPHA_BITS, &alphaBits);
+    LOG_INFO("  Surface color bits: R={} G={} B={} A={}", redBits, greenBits, blueBits, alphaBits);
+
     // Create backend render target for the default framebuffer
     GrGLFramebufferInfo fbInfo;
     fbInfo.fFBOID = framebuffer;
+    // Use GL_RGBA8 for OpenGL ES 3.0+ (should work with ANGLE)
+    // For ES 2.0, GL_RGBA8 might not be defined, but we're using ES 3.0+
     fbInfo.fFormat = GL_RGBA8;
 
     // Create backend render target
@@ -178,6 +209,9 @@ bool AngleRenderer::createSurface() {
         LOG_ERROR("  Failed to create backend render target");
         return false;
     }
+
+    LOG_INFO("  Backend render target: {}x{}, stencil={}",
+             backendRT.width(), backendRT.height(), backendRT.stencilBits());
 
     // Create Skia surface wrapping the default framebuffer
     // NOTE: ANGLE translates between the underlying API (Vulkan/D3D11) and OpenGL ES.
@@ -198,7 +232,14 @@ bool AngleRenderer::createSurface() {
         return false;
     }
 
-    LOG_INFO("  Skia surface created successfully");
+    // Verify the canvas is accessible
+    SkCanvas* canvas = m_impl->surface->getCanvas();
+    if (!canvas) {
+        LOG_ERROR("  Skia surface created but canvas is null");
+        return false;
+    }
+
+    LOG_INFO("  Skia surface created successfully (canvas: {})", (void*)canvas);
     return true;
 }
 
@@ -299,8 +340,8 @@ void AngleRenderer::render() {
         frameDebugCount++;
     }
 
-    // First frame: clear with a visible color to verify rendering works
-    // This also initializes Skia's rendering pipeline
+    // Clear the canvas with a known color first to verify rendering works
+    // This helps debug whether the issue is with rendering or with swap buffers
     static bool firstFrame = true;
     if (firstFrame) {
         LOG_INFO("  First frame - clearing with test color");
@@ -313,6 +354,7 @@ void AngleRenderer::render() {
 
     // Build backend info string
     std::string backendInfo = "ANGLE: " + m_angleContext->getAngleBackendString();
+
     backendInfo += " | " + m_angleContext->getGLRendererString();
 
     // Render the scene (rendererName is "Skia Ganesh" for OpenGL ES via ANGLE)
