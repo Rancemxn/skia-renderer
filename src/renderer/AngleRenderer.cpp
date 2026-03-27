@@ -153,20 +153,6 @@ bool AngleRenderer::createSkiaContext() {
               glInterface->fStandard == kGL_GrGLStandard ? "Desktop GL" :
               glInterface->fStandard == kGLES_GrGLStandard ? "OpenGL ES" : "Unknown");
 
-    // Verify critical GL functions are present in the interface
-    bool hasClear = (glInterface->fFunctions.fClear != nullptr);
-    bool hasDrawArrays = (glInterface->fFunctions.fDrawArrays != nullptr);
-    bool hasViewport = (glInterface->fFunctions.fViewport != nullptr);
-    bool hasBindFramebuffer = (glInterface->fFunctions.fBindFramebuffer != nullptr);
-
-    LOG_INFO("  GL interface validation: Clear={} DrawArrays={} Viewport={} BindFramebuffer={}",
-             hasClear, hasDrawArrays, hasViewport, hasBindFramebuffer);
-
-    if (!hasClear || !hasDrawArrays || !hasViewport) {
-        LOG_ERROR("  GL interface is missing critical functions!");
-        return false;
-    }
-
     // Create context options
     GrContextOptions options;
 
