@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_major:
+        description: 'Bump major version (e.g., 1.x.x -> 2.0.0)'
+        required: false
+        default: 'false'
+        type: boolean
+      bump_minor:
+        description: 'Bump minor version (e.g., 1.2.x -> 1.3.0)'
+        required: false
+        default: 'false'
+        type: boolean
+      draft:
+        description: 'Create as draft release'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Read current version
+        id: current_version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Calculate new version
+        id: new_version
+        run: |
+          CURRENT=${{ steps.current_version.outputs.version }}
+          
+          if [ "${{ inputs.bump_major }}" = "true" ]; then
+            # Bump major version: find next major version from tags
+            LATEST_MAJOR=$(git tag -l 'v*' | grep -E '^v[0-9]+$' | sed 's/v//' | sort -n | tail -1)
+            if [ -z "$LATEST_MAJOR" ]; then
+              NEW_MAJOR=1
+            else
+              NEW_MAJOR=$((LATEST_MAJOR + 1))
+            fi
+            NEW_VERSION="${NEW_MAJOR}0"
+            NEW_TAG="v${NEW_MAJOR}.0.${NEW_VERSION}"
+          elif [ "${{ inputs.bump_minor }}" = "true" ]; then
+            # Bump minor version
+            LATEST_TAG=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            if [ -z "$LATEST_TAG" ]; then
+              NEW_TAG="v1.1.$((CURRENT + 1))"
+            else
+              MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | tr -d 'v')
+              MINOR=$(echo $LATEST_TAG | cut -d. -f2)
+              NEW_MINOR=$((MINOR + 1))
+              NEW_VERSION=$((CURRENT + 1))
+              NEW_TAG="v${MAJOR}.${NEW_MINOR}.${NEW_VERSION}"
+            fi
+          else
+            # Increment build number
+            NEW_VERSION=$((CURRENT + 1))
+            
+            # Determine tag version from existing tags
+            LATEST_TAG=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            if [ -z "$LATEST_TAG" ]; then
+              NEW_TAG="v1.2.${NEW_VERSION}"
+            else
+              MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | tr -d 'v')
+              MINOR=$(echo $LATEST_TAG | cut -d. -f2)
+              NEW_TAG="v${MAJOR}.${MINOR}.${NEW_VERSION}"
+            fi
+          fi
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+          echo "New tag: $NEW_TAG"
+
+      - name: Update VERSION file
+        run: |
+          echo "${{ steps.new_version.outputs.new_version }}" > VERSION
+          git add VERSION
+
+      - name: Merge develop into main
+        run: |
+          git checkout main
+          git merge develop --no-ff -m "chore: merge develop for release ${{ steps.new_version.outputs.new_tag }}"
+          git push origin main
+
+      - name: Create tag
+        run: |
+          git tag -a ${{ steps.new_version.outputs.new_tag }} -m "Release ${{ steps.new_version.outputs.new_tag }}
+          
+          Version: ${{ steps.new_version.outputs.new_version }}
+          Created: $(date '+%Y-%m-%d %H:%M:%S')"
+          git push origin ${{ steps.new_version.outputs.new_tag }}
+
+      - name: Sync develop branch
+        run: |
+          git checkout develop
+          git merge main -m "chore: sync with main after release ${{ steps.new_version.outputs.new_tag }}"
+          git push origin develop
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DRAFT_FLAG=""
+          if [ "${{ inputs.draft }}" = "true" ]; then
+            DRAFT_FLAG="--draft"
+          fi
+          
+          gh release create ${{ steps.new_version.outputs.new_tag }} \
+            --title "Release ${{ steps.new_version.outputs.new_tag }}" \
+            --notes "## Release ${{ steps.new_version.outputs.new_tag }}
+          
+          **Version Number:** ${{ steps.new_version.outputs.new_version }}
+          
+          **Changes since last release:**
+          \`\`\`
+          $(git log $(git describe --tags --abbrev=0 ${{ steps.new_version.outputs.new_tag }}^)..${{ steps.new_version.outputs.new_tag }} --oneline 2>/dev/null || echo "Initial release")
+          \`\`\`
+          " \
+            $DRAFT_FLAG
+
+      - name: Summary
+        run: |
+          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Previous Version | ${{ steps.current_version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| New Version | ${{ steps.new_version.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | ${{ steps.new_version.outputs.new_tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Draft | ${{ inputs.draft }} |" >> $GITHUB_STEP_SUMMARY
