@@ -40,20 +40,8 @@ namespace skia_renderer {
 // This is documented in ANGLE's implementation.
 static GrGLFuncPtr egl_get_gl_proc(void* ctx, const char name[]) {
     (void)ctx;  // unused
-
     // ANGLE's eglGetProcAddress works for all GL functions (core + extensions)
-    GrGLFuncPtr proc = (GrGLFuncPtr)eglGetProcAddress(name);
-
-    // Debug: log failed function lookups (only for first few)
-    if (!proc) {
-        static int failCount = 0;
-        if (failCount < 10) {
-            LOG_WARN("  Failed to get GL function: {}", name ? name : "(null)");
-            failCount++;
-        }
-    }
-
-    return proc;
+    return (GrGLFuncPtr)eglGetProcAddress(name);
 }
 
 struct AngleRenderer::Impl {
@@ -109,23 +97,8 @@ bool AngleRenderer::initialize(SDL_Window* window, int width, int height, const 
 }
 
 bool AngleRenderer::createSkiaContext() {
-    LOG_INFO("  Creating Skia Ganesh context for ANGLE...");
-
     // Ensure EGL context is current before creating GL interface
     m_angleContext->makeCurrent();
-
-    // Get GL version info for debugging
-    const char* versionStr = reinterpret_cast<const char*>(glGetString(GL_VERSION));
-    const char* vendorStr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
-    const char* rendererStr = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
-
-    LOG_INFO("  GL Version: {}", versionStr ? versionStr : "(null)");
-    LOG_INFO("  GL Vendor: {}", vendorStr ? vendorStr : "(null)");
-    LOG_INFO("  GL Renderer: {}", rendererStr ? rendererStr : "(null)");
-
-    // Verify some critical GL functions are available
-    auto testFunc = (void(*)())eglGetProcAddress("glClear");
-    LOG_INFO("  Test eglGetProcAddress(glClear): {}", testFunc ? "OK" : "FAILED");
 
     // Create GL interface for ANGLE/EGL
     // GrGLMakeNativeInterface() uses platform-specific loaders (wglGetProcAddress on Windows)
@@ -138,20 +111,13 @@ bool AngleRenderer::createSkiaContext() {
 
     if (!glInterface) {
         // Fallback: try the generic assembled interface (auto-detects GL vs GLES)
-        LOG_DEBUG("  GrGLMakeAssembledGLESInterface failed, trying GrGLMakeAssembledInterface...");
         glInterface = GrGLMakeAssembledInterface(nullptr, egl_get_gl_proc);
     }
 
     if (!glInterface) {
-        LOG_ERROR("  Failed to create GL interface for ANGLE");
-        LOG_ERROR("  This usually means the GL context is not current or GL functions cannot be loaded");
+        LOG_ERROR("Failed to create GL interface for ANGLE");
         return false;
     }
-
-    // Log GL interface info
-    LOG_INFO("  GL interface created: {}",
-              glInterface->fStandard == kGL_GrGLStandard ? "Desktop GL" :
-              glInterface->fStandard == kGLES_GrGLStandard ? "OpenGL ES" : "Unknown");
 
     // Create context options
     GrContextOptions options;
@@ -159,17 +125,16 @@ bool AngleRenderer::createSkiaContext() {
     // Create Ganesh context
     m_impl->grContext = GrDirectContexts::MakeGL(glInterface, options);
     if (!m_impl->grContext) {
-        LOG_ERROR("  Failed to create Skia Ganesh context");
+        LOG_ERROR("Failed to create Skia Ganesh context");
         return false;
     }
 
-    LOG_INFO("  Skia Ganesh context created successfully");
     return true;
 }
 
 bool AngleRenderer::createSurface() {
     if (!m_impl->grContext) {
-        LOG_ERROR("  No Skia context available");
+        LOG_ERROR("No Skia context available");
         return false;
     }
 
@@ -179,39 +144,21 @@ bool AngleRenderer::createSurface() {
     // Get the default framebuffer (0 = window framebuffer)
     GLint framebuffer = m_angleContext->getCurrentFramebuffer();
 
-    LOG_INFO("  Creating Skia surface (FBO: {}, {}x{})...", framebuffer, m_width, m_height);
-
-    // Determine the correct format for the render target
-    // For ANGLE on Windows with D3D11/Vulkan backend, BGRA is often the native format
-    // But we need to check what the EGL surface actually uses
-    GLint redBits = 0, greenBits = 0, blueBits = 0, alphaBits = 0;
-    glGetIntegerv(GL_RED_BITS, &redBits);
-    glGetIntegerv(GL_GREEN_BITS, &greenBits);
-    glGetIntegerv(GL_BLUE_BITS, &blueBits);
-    glGetIntegerv(GL_ALPHA_BITS, &alphaBits);
-    LOG_INFO("  Surface color bits: R={} G={} B={} A={}", redBits, greenBits, blueBits, alphaBits);
-
     // Create backend render target for the default framebuffer
     GrGLFramebufferInfo fbInfo;
     fbInfo.fFBOID = framebuffer;
-    // Use GL_RGBA8 for OpenGL ES 3.0+ (should work with ANGLE)
-    // For ES 2.0, GL_RGBA8 might not be defined, but we're using ES 3.0+
     fbInfo.fFormat = GL_RGBA8;
 
     // Create backend render target
-    // sampleCount=0 means no MSAA, stencilBits=8 for stencil buffer
     int sampleCount = 0;
     int stencilBits = 8;
     GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeGL(
         m_width, m_height, sampleCount, stencilBits, fbInfo);
 
     if (!backendRT.isValid()) {
-        LOG_ERROR("  Failed to create backend render target");
+        LOG_ERROR("Failed to create backend render target");
         return false;
     }
-
-    LOG_INFO("  Backend render target: {}x{}, stencil={}",
-             backendRT.width(), backendRT.height(), backendRT.stencilBits());
 
     // Create Skia surface wrapping the default framebuffer
     // NOTE: ANGLE translates between the underlying API (Vulkan/D3D11) and OpenGL ES.
@@ -228,18 +175,10 @@ bool AngleRenderer::createSurface() {
     );
 
     if (!m_impl->surface) {
-        LOG_ERROR("  Failed to create Skia surface");
+        LOG_ERROR("Failed to create Skia surface");
         return false;
     }
 
-    // Verify the canvas is accessible
-    SkCanvas* canvas = m_impl->surface->getCanvas();
-    if (!canvas) {
-        LOG_ERROR("  Skia surface created but canvas is null");
-        return false;
-    }
-
-    LOG_INFO("  Skia surface created successfully (canvas: {})", (void*)canvas);
     return true;
 }
 
@@ -297,56 +236,19 @@ void AngleRenderer::endFrame() {
         return;
     }
 
-    // Debug: log first few endFrame calls
-    static int endFrameCount = 0;
-    if (endFrameCount < 5) {
-        LOG_INFO("  ANGLE endFrame() frame {}", endFrameCount);
-        endFrameCount++;
-    }
-
-    // Flush Skia context - this ensures all rendering commands are submitted
+    // Flush Skia context and swap buffers
     m_impl->grContext->flushAndSubmit();
-
-    // Check for GL errors before swap
-    GLenum glError = glGetError();
-    if (glError != GL_NO_ERROR) {
-        static int glErrorCount = 0;
-        if (glErrorCount < 5) {
-            LOG_WARN("  GL error before swap: 0x{:X}", glError);
-            glErrorCount++;
-        }
-    }
-
-    // Swap buffers
     m_angleContext->swapBuffers();
 }
 
 void AngleRenderer::render() {
     if (!m_initialized || !m_impl->surface) {
-        LOG_ERROR("ANGLE renderer not initialized");
         return;
     }
 
     SkCanvas* canvas = m_impl->surface->getCanvas();
     if (!canvas) {
-        LOG_ERROR("Failed to get canvas from surface");
         return;
-    }
-
-    // Debug: log first few frames
-    static int frameDebugCount = 0;
-    if (frameDebugCount < 5) {
-        LOG_INFO("  ANGLE render() frame {} - canvas: {}", frameDebugCount, (void*)canvas);
-        frameDebugCount++;
-    }
-
-    // Clear the canvas with a known color first to verify rendering works
-    // This helps debug whether the issue is with rendering or with swap buffers
-    static bool firstFrame = true;
-    if (firstFrame) {
-        LOG_INFO("  First frame - clearing with test color");
-        canvas->clear(SkColorSetARGB(255, 100, 149, 237));  // Cornflower blue
-        firstFrame = false;
     }
 
     // Update scene renderer state
@@ -354,10 +256,9 @@ void AngleRenderer::render() {
 
     // Build backend info string
     std::string backendInfo = "ANGLE: " + m_angleContext->getAngleBackendString();
-
     backendInfo += " | " + m_angleContext->getGLRendererString();
 
-    // Render the scene (rendererName is "Skia Ganesh" for OpenGL ES via ANGLE)
+    // Render the scene
     m_sceneRenderer->render(canvas, m_width, m_height, backendInfo, "Skia Ganesh");
 
     // Flush after each render call
