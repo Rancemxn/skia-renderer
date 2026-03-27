@@ -396,6 +396,13 @@ void AngleRenderer::render() {
         return;
     }
 
+    // Debug: log first few frames
+    static int frameDebugCount = 0;
+    if (frameDebugCount < 3) {
+        LOG_INFO("  ANGLE render() frame {}", frameDebugCount);
+        frameDebugCount++;
+    }
+
     // Update scene renderer state
     m_sceneRenderer->setFPS(m_fps);
 

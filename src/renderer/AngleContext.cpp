@@ -198,6 +198,11 @@ bool AngleContext::createContext(int majorVersion, int minorVersion) {
 }
 
 bool AngleContext::createSurface() {
+    if (!m_nativeWindow) {
+        LOG_ERROR("  Native window handle is NULL, cannot create surface");
+        return false;
+    }
+
     // Create window surface using stored native window handle
     m_surface = eglCreateWindowSurface(m_display, m_config, m_nativeWindow, nullptr);
 
@@ -206,7 +211,7 @@ bool AngleContext::createSurface() {
         return false;
     }
 
-    LOG_INFO("  EGL surface created successfully");
+    LOG_INFO("  EGL surface created successfully (handle: {})", (void*)m_surface);
     return true;
 }
 
@@ -236,11 +241,13 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
 
     // Get window size
     SDL_GetWindowSize(window, &m_width, &m_height);
+    LOG_INFO("  Window size: {}x{}", m_width, m_height);
 
     // Get native window handle for surface creation (not for display)
 #if defined(_WIN32)
     m_nativeWindow = reinterpret_cast<EGLNativeWindowType>(
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.win32.hwnd", nullptr));
+    LOG_INFO("  Native window (HWND): {}", m_nativeWindow ? "valid" : "NULL");
 #else
     m_nativeWindow = reinterpret_cast<EGLNativeWindowType>(
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), "SDL.window.x11.window", nullptr));
