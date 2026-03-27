@@ -275,6 +275,15 @@ void AngleRenderer::render() {
         return;
     }
 
+    // First frame: clear to initialize Skia's rendering pipeline
+    // This is necessary because Skia may lazily initialize some GPU resources
+    // and the first actual drawing operation needs to trigger this initialization
+    static bool firstFrame = true;
+    if (firstFrame) {
+        canvas->clear(SK_ColorTRANSPARENT);
+        firstFrame = false;
+    }
+
     // Update scene renderer state
     m_sceneRenderer->setFPS(m_fps);
 
