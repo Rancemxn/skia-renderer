@@ -303,12 +303,14 @@ bool AngleRenderer::createSurface() {
              backendRT.width(), backendRT.height(), backendRT.stencilBits());
 
     // Create Skia surface wrapping the default framebuffer
-    // Use kTopLeft_GrSurfaceOrigin for EGL/ANGLE (top-left origin)
+    // NOTE: ANGLE translates between the underlying API (Vulkan/D3D11) and OpenGL ES.
+    // Even when using Vulkan backend, ANGLE presents an OpenGL ES interface with
+    // bottom-left origin convention. Use kBottomLeft_GrSurfaceOrigin for ANGLE.
     SkSurfaceProps surfaceProps(0, kUnknown_SkPixelGeometry);
     m_impl->surface = SkSurfaces::WrapBackendRenderTarget(
         m_impl->grContext.get(),
         backendRT,
-        kTopLeft_GrSurfaceOrigin,
+        kBottomLeft_GrSurfaceOrigin,
         kRGBA_8888_SkColorType,
         SkColorSpace::MakeSRGB(),
         &surfaceProps
