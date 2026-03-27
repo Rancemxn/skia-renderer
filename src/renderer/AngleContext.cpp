@@ -158,6 +158,7 @@ bool AngleContext::createContext(int majorVersion, int minorVersion) {
         
         EGLint error = eglGetError();
         LOG_DEBUG("  ES {}.{} context creation failed (error 0x{:X})", majorVersion, minorVersion, error);
+        (void)error;  // suppress unused variable warning in non-debug builds
     }
 
     // Try with just major version (ES 3.0)
@@ -175,6 +176,7 @@ bool AngleContext::createContext(int majorVersion, int minorVersion) {
         
         EGLint error = eglGetError();
         LOG_DEBUG("  ES 3.0 context creation failed (error 0x{:X})", error);
+        (void)error;  // suppress unused variable warning in non-debug builds
     }
 
     // Fallback to ES 2.0
@@ -279,6 +281,7 @@ bool AngleContext::initialize(SDL_Window* window, int majorVersion, int minorVer
         if (m_display == EGL_NO_DISPLAY) {
             EGLint error = eglGetError();
             LOG_DEBUG("  D3D11 backend returned no display (error 0x{:X})", error);
+            (void)error;  // suppress unused variable warning in non-debug builds
         } else {
             LOG_INFO("  D3D11 platform display obtained successfully");
         }

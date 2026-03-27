@@ -11,6 +11,7 @@
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/core/SkSurface.h"
@@ -25,22 +26,139 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
+// Standard headers
+#include <cstring>
+
 namespace skia_renderer {
 
 // Custom GL function loader using EGL
 // This is required for ANGLE because GrGLMakeNativeInterface() uses platform-specific
 // mechanisms (wglGetProcAddress, glXGetProcAddress) which don't work with EGL contexts.
+//
+// Per EGL spec, eglGetProcAddress may not support core GL functions, so we try to get
+// them directly from the linked library first. ANGLE links libGLESv2/libEGL which export
+// these functions directly.
+//
+// This approach matches Skia's internal GrGLMakeEGLInterface implementation.
 static GrGLFuncPtr egl_get_gl_proc(void* ctx, const char name[]) {
-    // eglGetProcAddress can load both core and extension functions
-    GrGLFuncPtr proc = (GrGLFuncPtr)eglGetProcAddress(name);
-    if (proc) {
-        return proc;
-    }
-    
-    // For OpenGL ES core functions on some platforms, eglGetProcAddress may return NULL
-    // In this case, the function might already be linked directly
-    // We return NULL and let Skia handle it (it will use its own fallbacks)
-    return nullptr;
+    (void)ctx;  // unused
+
+    // First, try to get the function directly (core functions are often linked)
+    // Using a simple approach: check common core function names and return them directly
+    // This handles the case where eglGetProcAddress returns NULL for core functions
+    #define RETURN_IF_MATCH(func) if (strcmp(name, #func) == 0) return (GrGLFuncPtr)func;
+
+    // Core GL ES 2.0/3.0 functions that should be linked directly
+    RETURN_IF_MATCH(glActiveTexture)
+    RETURN_IF_MATCH(glAttachShader)
+    RETURN_IF_MATCH(glBindAttribLocation)
+    RETURN_IF_MATCH(glBindBuffer)
+    RETURN_IF_MATCH(glBindFramebuffer)
+    RETURN_IF_MATCH(glBindRenderbuffer)
+    RETURN_IF_MATCH(glBindTexture)
+    RETURN_IF_MATCH(glBlendColor)
+    RETURN_IF_MATCH(glBlendEquation)
+    RETURN_IF_MATCH(glBlendFunc)
+    RETURN_IF_MATCH(glBufferData)
+    RETURN_IF_MATCH(glBufferSubData)
+    RETURN_IF_MATCH(glCheckFramebufferStatus)
+    RETURN_IF_MATCH(glClear)
+    RETURN_IF_MATCH(glClearColor)
+    RETURN_IF_MATCH(glClearStencil)
+    RETURN_IF_MATCH(glColorMask)
+    RETURN_IF_MATCH(glCompileShader)
+    RETURN_IF_MATCH(glCompressedTexImage2D)
+    RETURN_IF_MATCH(glCompressedTexSubImage2D)
+    RETURN_IF_MATCH(glCopyTexSubImage2D)
+    RETURN_IF_MATCH(glCreateProgram)
+    RETURN_IF_MATCH(glCreateShader)
+    RETURN_IF_MATCH(glCullFace)
+    RETURN_IF_MATCH(glDeleteBuffers)
+    RETURN_IF_MATCH(glDeleteFramebuffers)
+    RETURN_IF_MATCH(glDeleteProgram)
+    RETURN_IF_MATCH(glDeleteRenderbuffers)
+    RETURN_IF_MATCH(glDeleteShader)
+    RETURN_IF_MATCH(glDeleteTextures)
+    RETURN_IF_MATCH(glDepthMask)
+    RETURN_IF_MATCH(glDisable)
+    RETURN_IF_MATCH(glDisableVertexAttribArray)
+    RETURN_IF_MATCH(glDrawArrays)
+    RETURN_IF_MATCH(glDrawElements)
+    RETURN_IF_MATCH(glEnable)
+    RETURN_IF_MATCH(glEnableVertexAttribArray)
+    RETURN_IF_MATCH(glFinish)
+    RETURN_IF_MATCH(glFlush)
+    RETURN_IF_MATCH(glFramebufferRenderbuffer)
+    RETURN_IF_MATCH(glFramebufferTexture2D)
+    RETURN_IF_MATCH(glFrontFace)
+    RETURN_IF_MATCH(glGenBuffers)
+    RETURN_IF_MATCH(glGenFramebuffers)
+    RETURN_IF_MATCH(glGenRenderbuffers)
+    RETURN_IF_MATCH(glGenTextures)
+    RETURN_IF_MATCH(glGenerateMipmap)
+    RETURN_IF_MATCH(glGetBufferParameteriv)
+    RETURN_IF_MATCH(glGetError)
+    RETURN_IF_MATCH(glGetFramebufferAttachmentParameteriv)
+    RETURN_IF_MATCH(glGetIntegerv)
+    RETURN_IF_MATCH(glGetProgramInfoLog)
+    RETURN_IF_MATCH(glGetProgramiv)
+    RETURN_IF_MATCH(glGetRenderbufferParameteriv)
+    RETURN_IF_MATCH(glGetShaderInfoLog)
+    RETURN_IF_MATCH(glGetShaderPrecisionFormat)
+    RETURN_IF_MATCH(glGetShaderiv)
+    RETURN_IF_MATCH(glGetString)
+    RETURN_IF_MATCH(glGetUniformLocation)
+    RETURN_IF_MATCH(glIsTexture)
+    RETURN_IF_MATCH(glLineWidth)
+    RETURN_IF_MATCH(glLinkProgram)
+    RETURN_IF_MATCH(glPixelStorei)
+    RETURN_IF_MATCH(glReadPixels)
+    RETURN_IF_MATCH(glRenderbufferStorage)
+    RETURN_IF_MATCH(glScissor)
+    RETURN_IF_MATCH(glShaderSource)
+    RETURN_IF_MATCH(glStencilFunc)
+    RETURN_IF_MATCH(glStencilFuncSeparate)
+    RETURN_IF_MATCH(glStencilMask)
+    RETURN_IF_MATCH(glStencilMaskSeparate)
+    RETURN_IF_MATCH(glStencilOp)
+    RETURN_IF_MATCH(glStencilOpSeparate)
+    RETURN_IF_MATCH(glTexImage2D)
+    RETURN_IF_MATCH(glTexParameterf)
+    RETURN_IF_MATCH(glTexParameterfv)
+    RETURN_IF_MATCH(glTexParameteri)
+    RETURN_IF_MATCH(glTexParameteriv)
+    RETURN_IF_MATCH(glTexSubImage2D)
+    RETURN_IF_MATCH(glUniform1f)
+    RETURN_IF_MATCH(glUniform1fv)
+    RETURN_IF_MATCH(glUniform1i)
+    RETURN_IF_MATCH(glUniform1iv)
+    RETURN_IF_MATCH(glUniform2f)
+    RETURN_IF_MATCH(glUniform2fv)
+    RETURN_IF_MATCH(glUniform2i)
+    RETURN_IF_MATCH(glUniform2iv)
+    RETURN_IF_MATCH(glUniform3f)
+    RETURN_IF_MATCH(glUniform3fv)
+    RETURN_IF_MATCH(glUniform3i)
+    RETURN_IF_MATCH(glUniform3iv)
+    RETURN_IF_MATCH(glUniform4f)
+    RETURN_IF_MATCH(glUniform4fv)
+    RETURN_IF_MATCH(glUniform4i)
+    RETURN_IF_MATCH(glUniform4iv)
+    RETURN_IF_MATCH(glUniformMatrix2fv)
+    RETURN_IF_MATCH(glUniformMatrix3fv)
+    RETURN_IF_MATCH(glUniformMatrix4fv)
+    RETURN_IF_MATCH(glUseProgram)
+    RETURN_IF_MATCH(glVertexAttrib1f)
+    RETURN_IF_MATCH(glVertexAttrib2fv)
+    RETURN_IF_MATCH(glVertexAttrib3fv)
+    RETURN_IF_MATCH(glVertexAttrib4fv)
+    RETURN_IF_MATCH(glVertexAttribPointer)
+    RETURN_IF_MATCH(glViewport)
+
+    #undef RETURN_IF_MATCH
+
+    // For extension functions and functions not in the list above, use eglGetProcAddress
+    return (GrGLFuncPtr)eglGetProcAddress(name);
 }
 
 struct AngleRenderer::Impl {
@@ -110,27 +228,25 @@ bool AngleRenderer::createSkiaContext() {
     LOG_INFO("  GL Vendor: {}", vendorStr ? vendorStr : "(null)");
     LOG_INFO("  GL Renderer: {}", rendererStr ? rendererStr : "(null)");
 
-    // Create GL interface using EGL function loader
-    // GrGLMakeNativeInterface() doesn't work with ANGLE/EGL because it uses
-    // platform-specific mechanisms (wglGetProcAddress, glXGetProcAddress) 
-    // that don't know about EGL contexts.
-    // We use GrGLMakeAssembledInterface() with eglGetProcAddress() instead.
-    sk_sp<const GrGLInterface> glInterface = GrGLMakeAssembledInterface(
-        nullptr,  // context pointer (not used)
-        egl_get_gl_proc,
-        GrGLInterface::kGLES_EnableOption  // We're using OpenGL ES
-    );
+    // Create GL interface for ANGLE/EGL
+    // GrGLMakeNativeInterface() uses platform-specific loaders (wglGetProcAddress on Windows)
+    // which don't work with EGL contexts. We use GrGLMakeAssembledInterface with our
+    // custom EGL-based function loader.
+    //
+    // GrGLMakeAssembledGLESInterface is preferred because ANGLE provides OpenGL ES,
+    // not desktop GL. This ensures the interface is correctly configured for ES.
+    sk_sp<const GrGLInterface> glInterface = GrGLMakeAssembledGLESInterface(nullptr, egl_get_gl_proc);
+
+    if (!glInterface) {
+        // Fallback: try the generic assembled interface (auto-detects GL vs GLES)
+        LOG_DEBUG("  GrGLMakeAssembledGLESInterface failed, trying GrGLMakeAssembledInterface...");
+        glInterface = GrGLMakeAssembledInterface(nullptr, egl_get_gl_proc);
+    }
 
     if (!glInterface) {
         LOG_ERROR("  Failed to create GL interface for ANGLE");
         LOG_ERROR("  This usually means the GL context is not current or GL functions cannot be loaded");
-        
-        // Try again with default options as fallback
-        glInterface = GrGLMakeAssembledInterface(nullptr, egl_get_gl_proc, nullptr);
-        if (!glInterface) {
-            LOG_ERROR("  Fallback GL interface creation also failed");
-            return false;
-        }
+        return false;
     }
 
     // Log GL interface info
