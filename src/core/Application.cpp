@@ -281,13 +281,6 @@ void Application::run() {
     int totalFrames = 0;
 
     while (m_impl->running) {
-        // Debug: log first few loop iterations
-        static int loopCount = 0;
-        if (loopCount < 3) {
-            LOG_INFO("  Main loop iteration {}", loopCount);
-            loopCount++;
-        }
-
         // Calculate delta time
         auto currentTime = std::chrono::high_resolution_clock::now();
         float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
@@ -419,13 +412,6 @@ void Application::render() {
         }
     }
 #endif
-
-    // Debug: log first few render calls
-    static int renderCount = 0;
-    if (renderCount < 3) {
-        LOG_INFO("  Application::render() frame {}", renderCount);
-        renderCount++;
-    }
 
     // Render
     m_impl->renderer->render();
