@@ -256,8 +256,25 @@ void AngleRenderer::endFrame() {
         return;
     }
 
+    // Debug: log first few endFrame calls
+    static int endFrameCount = 0;
+    if (endFrameCount < 5) {
+        LOG_INFO("  ANGLE endFrame() frame {}", endFrameCount);
+        endFrameCount++;
+    }
+
     // Flush Skia context - this ensures all rendering commands are submitted
     m_impl->grContext->flushAndSubmit();
+
+    // Check for GL errors before swap
+    GLenum glError = glGetError();
+    if (glError != GL_NO_ERROR) {
+        static int glErrorCount = 0;
+        if (glErrorCount < 5) {
+            LOG_WARN("  GL error before swap: 0x{:X}", glError);
+            glErrorCount++;
+        }
+    }
 
     // Swap buffers
     m_angleContext->swapBuffers();
@@ -275,12 +292,19 @@ void AngleRenderer::render() {
         return;
     }
 
-    // First frame: clear to initialize Skia's rendering pipeline
-    // This is necessary because Skia may lazily initialize some GPU resources
-    // and the first actual drawing operation needs to trigger this initialization
+    // Debug: log first few frames
+    static int frameDebugCount = 0;
+    if (frameDebugCount < 5) {
+        LOG_INFO("  ANGLE render() frame {} - canvas: {}", frameDebugCount, (void*)canvas);
+        frameDebugCount++;
+    }
+
+    // First frame: clear with a visible color to verify rendering works
+    // This also initializes Skia's rendering pipeline
     static bool firstFrame = true;
     if (firstFrame) {
-        canvas->clear(SK_ColorTRANSPARENT);
+        LOG_INFO("  First frame - clearing with test color");
+        canvas->clear(SkColorSetARGB(255, 100, 149, 237));  // Cornflower blue
         firstFrame = false;
     }
 
