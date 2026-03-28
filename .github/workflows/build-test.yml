@@ -15,13 +15,12 @@ on:
 permissions:
   contents: read
 
-env:
-  SCCACHE_GHA_ENABLED: "true"
-
 jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 180
+    env:
+      PYTHONUNBUFFERED: 1
     
     steps:
       - name: Checkout repository
@@ -33,10 +32,22 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install LLVM and Clang
+      - name: Install LLVM and Clang 20
         uses: KyleMayes/install-llvm-action@v2
         with:
-          version: "18"
+          version: "20"
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "a34c873a9717a888f58dc05268dea15592c2f0ff"
+
+      - name: Install vcpkg packages
+        run: |
+          echo "Installing libusb..."
+          vcpkg install libusb:x64-windows
+        env:
+          VCPKG_DEFAULT_TRIPLET: x64-windows
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
@@ -74,27 +85,32 @@ jobs:
           Write-Host ""
           
           Write-Host "Vulkan SDK: $env:VULKAN_SDK"
+          Write-Host "SCCACHE_PATH: $env:SCCACHE_PATH"
           Write-Host ""
 
       # ----------------------------------------
       # Sync Dependencies
       # ----------------------------------------
       - name: Sync dependencies
-        run: python sync.py
+        run: python -u sync.py -v
         timeout-minutes: 30
+        env:
+          SCCACHE_GHA_ENABLED: "true"
 
       # ----------------------------------------
       # Build
       # ----------------------------------------
       - name: Build ${{ inputs.build_type }}
-        run: python build.py --build-type ${{ inputs.build_type }}
+        run: python -u build.py --build-type ${{ inputs.build_type }}
         timeout-minutes: 120
+        env:
+          SCCACHE_GHA_ENABLED: "true"
 
       # ----------------------------------------
       # Show sccache stats
       # ----------------------------------------
       - name: Show sccache stats
-        run: sccache --show-stats
+        run: $env:SCCACHE_PATH --show-stats
 
       # ----------------------------------------
       # Package Artifacts
