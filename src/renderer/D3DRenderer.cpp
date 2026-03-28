@@ -38,6 +38,8 @@ D3DRenderer::~D3DRenderer() {
 }
 
 bool D3DRenderer::initialize(SDL_Window* window, int width, int height, const BackendConfig& config) {
+    (void)config;  // Suppress unused parameter warning
+    
     m_window = window;
     m_width = width;
     m_height = height;
@@ -75,13 +77,21 @@ bool D3DRenderer::createSkiaContext() {
 
     // Create backend context
     GrD3DBackendContext backendContext;
-    backendContext.fAdapter.Reset(m_d3dContext->getAdapter());
-    backendContext.fDevice.Reset(m_d3dContext->getDevice());
-    backendContext.fQueue.Reset(m_d3dContext->getCommandQueue());
-    // Note: AddRef is called by gr_cp constructor
-    backendContext.fAdapter->AddRef();
-    backendContext.fDevice->AddRef();
-    backendContext.fQueue->AddRef();
+    
+    // Use gr_cp constructor to adopt the pointers
+    // Note: gr_cp constructor does NOT call AddRef, so we need to do it manually
+    ID3D12Device* device = m_d3dContext->getDevice();
+    ID3D12CommandQueue* queue = m_d3dContext->getCommandQueue();
+    IDXGIAdapter1* adapter = m_d3dContext->getAdapter();
+    
+    // AddRef since gr_cp will Release when destroyed
+    adapter->AddRef();
+    device->AddRef();
+    queue->AddRef();
+    
+    backendContext.fAdapter = gr_cp<IDXGIAdapter1>(adapter);
+    backendContext.fDevice = gr_cp<ID3D12Device>(device);
+    backendContext.fQueue = gr_cp<ID3D12CommandQueue>(queue);
     backendContext.fProtectedContext = GrProtected::kNo;
 
     // Create context options
@@ -114,7 +124,10 @@ bool D3DRenderer::createSurface() {
 
     // Setup texture resource info
     m_impl->textureInfo = GrD3DTextureResourceInfo();
-    m_impl->textureInfo.fResource = backBuffer;
+    
+    // AddRef the back buffer since gr_cp will Release it
+    backBuffer->AddRef();
+    m_impl->textureInfo.fResource = gr_cp<ID3D12Resource>(backBuffer);
     m_impl->textureInfo.fResourceState = D3D12_RESOURCE_STATE_PRESENT;
     m_impl->textureInfo.fFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     m_impl->textureInfo.fSampleCount = 1;
@@ -160,6 +173,7 @@ bool D3DRenderer::createSurface() {
 
 void D3DRenderer::destroySurface() {
     m_impl->surface.reset();
+    m_impl->textureInfo.fResource.reset();
 }
 
 void D3DRenderer::shutdown() {

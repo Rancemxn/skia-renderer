@@ -3,7 +3,7 @@
 #include "D3DContext.h"
 #include "core/Logger.h"
 
-#include <SDL3/SDL_syswm.h>
+#include <SDL3/SDL.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <string>

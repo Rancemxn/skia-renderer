@@ -158,6 +158,9 @@ bool Application::initialize() {
         case BackendType::ANGLE:
             success = initializeANGLEBackend();
             break;
+        case BackendType::D3D12:
+            success = initializeD3D12Backend();
+            break;
     }
 
     if (!success) {
@@ -259,6 +262,29 @@ bool Application::initializeANGLEBackend() {
     return true;
 #else
     LOG_ERROR("ANGLE backend not available. Build with -DUSE_ANGLE=ON");
+    return false;
+#endif
+}
+
+bool Application::initializeD3D12Backend() {
+#ifdef _WIN32
+    LOG_INFO("Initializing D3D12 backend...");
+    
+    // Create renderer using factory
+    m_impl->renderer = RendererFactory::create(BackendType::D3D12);
+    
+    if (!m_impl->renderer->initialize(
+        m_impl->window,
+        m_impl->width,
+        m_impl->height,
+        m_impl->backendConfig)) {
+        LOG_ERROR("Failed to initialize D3D12 renderer");
+        return false;
+    }
+    
+    return true;
+#else
+    LOG_ERROR("D3D12 backend only available on Windows");
     return false;
 #endif
 }
