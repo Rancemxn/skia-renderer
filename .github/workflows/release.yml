@@ -65,20 +65,17 @@ jobs:
           CURRENT_MAJOR_MINOR=${{ steps.current_version.outputs.major_minor }}
           CURRENT_BUILD=${{ steps.current_version.outputs.build_number }}
           
-          # Always increment BUILD_NUMBER
+          # ALWAYS increment BUILD_NUMBER (represents commit count)
           NEW_BUILD=$((CURRENT_BUILD + 1))
           
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.bump_major }}" = "true" ]; then
-              # Bump major: MAJOR_MINOR + 10, BUILD = 0
+              # Bump major: MAJOR_MINOR + 10 (BUILD still increments)
               NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 10))
-              NEW_BUILD=0
             elif [ "${{ inputs.bump_minor }}" = "true" ]; then
-              # Bump minor: MAJOR_MINOR + 1, BUILD = 0
+              # Bump minor: MAJOR_MINOR + 1 (BUILD still increments)
               NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 1))
-              NEW_BUILD=0
             else
-              # Default release: just use incremented BUILD_NUMBER
               NEW_MAJOR_MINOR=$CURRENT_MAJOR_MINOR
             fi
           else
@@ -96,7 +93,6 @@ jobs:
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "new_version=${NEW_MAJOR}.${NEW_MINOR}.${NEW_BUILD}" >> $GITHUB_OUTPUT
           echo "New version: $NEW_TAG (MAJOR_MINOR=$NEW_MAJOR_MINOR, BUILD=$NEW_BUILD)"
-          echo "is_release=${{ github.event_name == 'workflow_dispatch' }}" >> $GITHUB_OUTPUT
 
       - name: Update VERSION and commit on develop
         run: |
