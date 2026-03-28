@@ -443,8 +443,7 @@ void D3DContext::transitionToRenderTarget() {
     ID3D12CommandList* commandLists[] = { m_commandList.Get() };
     m_commandQueue->ExecuteCommandLists(1, commandLists);
 
-    // Wait for completion
-    waitForGPU();
+    // Note: Don't wait for GPU here - let Skia's flush handle synchronization
 }
 
 void D3DContext::transitionToPresent() {
@@ -469,8 +468,7 @@ void D3DContext::transitionToPresent() {
     ID3D12CommandList* commandLists[] = { m_commandList.Get() };
     m_commandQueue->ExecuteCommandLists(1, commandLists);
 
-    // Wait for completion
-    waitForGPU();
+    // Note: Don't wait for GPU here - present will handle synchronization
 }
 
 } // namespace skia_renderer
