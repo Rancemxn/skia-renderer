@@ -662,7 +662,7 @@ def sync_deps(args):
             if gclient.exists():
                 try:
                     # Run gclient sync from deps_dir (where .gclient is located)
-                    run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
+                    run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
                            cwd=str(deps_dir), env=env, check=False, verbose=verbose)
                 except Exception as e:
                     print(f"  Warning: gclient sync error: {e}", flush=True)
