@@ -692,45 +692,40 @@ if(VERBOSE_DEPS)
 endif()
 
 # ========================================
-# DirectX-Headers (Windows only)
+# DirectX-Headers (REQUIRED on Windows)
 # ========================================
 if(WIN32)
     if(VERBOSE_DEPS)
         message(STATUS "")
         message(STATUS "[DirectX-Headers Detection]")
     endif()
-    
+
     set(DIRECTX_HEADERS_DIR "${DIRECTX_HEADERS_DIR}" CACHE PATH "DirectX-Headers directory")
     if(NOT DIRECTX_HEADERS_DIR)
         set(DIRECTX_HEADERS_DIR "${DEPS_DIR}/DirectX-Headers")
     endif()
-    
+
     if(VERBOSE_DEPS)
         message(STATUS "  DIRECTX_HEADERS_DIR: ${DIRECTX_HEADERS_DIR}")
     endif()
-    
+
     # Check for DirectX-Headers
     set(DIRECTX_HEADERS_INCLUDE_DIR "${DIRECTX_HEADERS_DIR}/include")
-    
-    if(VERBOSE_DEPS)
-        message(STATUS "  Searching for DirectX-Headers:")
-        if(EXISTS "${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
-            message(STATUS "    [FOUND] ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
-        else()
-            message(STATUS "    d3d12.h not found at ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
+    set(DIRECTX_HEADERS_FOUND FALSE)
+
+    if(EXISTS "${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
+        set(DIRECTX_HEADERS_FOUND TRUE)
+        if(VERBOSE_DEPS)
+            message(STATUS "  [FOUND] ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
         endif()
-        if(EXISTS "${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
-            message(STATUS "    [FOUND] ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
-        else()
-            message(STATUS "    d3dx12.h not found at ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
-        endif()
+    elseif(VERBOSE_DEPS)
+        message(STATUS "  DirectX-Headers not found at ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
     endif()
-    
-    # Verify DirectX-Headers exists
-    if(NOT EXISTS "${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
-        message(WARNING "DirectX-Headers not found. D3D12 backend may fail to compile. Run: python sync.py")
+
+    if(NOT DIRECTX_HEADERS_FOUND)
+        message(FATAL_ERROR "DirectX-Headers not found. Run: python sync.py")
     endif()
-    
+
     # Results
     if(VERBOSE_DEPS)
         message(STATUS "")
@@ -760,6 +755,9 @@ add_executable(${PROJECT_NAME}
     # D3D12 backend files (Windows only)
     $<${WIN32}:src/renderer/D3DContext.cpp>
     $<${WIN32}:src/renderer/D3DRenderer.cpp>
+    # DirectX-Headers source files (Windows only)
+    $<${WIN32}:${DIRECTX_HEADERS_DIR}/src/dxguids.cpp>
+    $<${WIN32}:${DIRECTX_HEADERS_DIR}/src/d3dx12_property_format_table.cpp>
 )
 
 # Enable Vulkan backend
@@ -768,7 +766,13 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE VULKAN_BACKEND_ENABLED=1)
 # ANGLE is always enabled
 target_compile_definitions(${PROJECT_NAME} PRIVATE USE_ANGLE=1)
 
+# Use DirectX-Headers on Windows (MUST be first to override Windows SDK)
 target_include_directories(${PROJECT_NAME} PRIVATE
+    # DirectX-Headers include (MUST be first on Windows to override Windows SDK)
+    $<$<PLATFORM_ID:Windows>:${DIRECTX_HEADERS_INCLUDE_DIR}>
+    $<$<PLATFORM_ID:Windows>:${DIRECTX_HEADERS_INCLUDE_DIR}/directx>
+    $<$<PLATFORM_ID:Windows>:${DIRECTX_HEADERS_INCLUDE_DIR}/dxguids>
+    # Project source
     ${CMAKE_SOURCE_DIR}/src
     ${SDL3_INCLUDE_DIRS}
     ${SKIA_INCLUDE_DIR}
@@ -782,8 +786,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${ANGLE_INCLUDE_DIR}/GLES2
     ${ANGLE_INCLUDE_DIR}/GLES3
     ${ANGLE_INCLUDE_DIR}/KHR
-    # DirectX-Headers include directory (Windows only)
-    $<$<PLATFORM_ID:Windows>:${DIRECTX_HEADERS_INCLUDE_DIR}>
 )
 
 # ========================================

@@ -4,7 +4,9 @@
 #include "core/Logger.h"
 
 #include <SDL3/SDL.h>
-#include <d3d12.h>
+// Use DirectX-Headers instead of Windows SDK D3D12 headers
+#include <directx/d3d12.h>
+#include <directx/d3dx12.h>
 #include <dxgi1_6.h>
 #include <directx/d3dx12.h>
 #include <string>

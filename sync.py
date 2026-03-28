@@ -13,7 +13,7 @@ SDL3_VERSION = "3.4.2"
 VKBOOTSTRAP_VERSION = "1.4.343"
 SPDLOG_VERSION = "1.17.0"
 CLI11_VERSION = "2.6.2"
-DIRECTX_HEADERS_VERSION = "1.619.1"
+DIRECTX_HEADERS_REPO = "https://github.com/microsoft/DirectX-Headers.git"
 
 # ANGLE configuration
 ANGLE_COMMIT = "ae66dc5ad3506d3ea7196da4dba54a7b1f8b4f8c"
@@ -581,11 +581,32 @@ def sync_deps(args):
             extract_archive(archive, cli11_dir)
             print("  [OK] CLI11")
         print()
-    
-    # 5. ANGLE (can be skipped with --skip-angle if already downloaded)
+
+    # 5. DirectX-Headers (for D3D12 development on Windows)
+    if not args.skip_directx_headers:
+        print("=" * 50)
+        print("[5/7] DirectX-Headers")
+        print("=" * 50)
+
+        dxheaders_dir = deps_dir / "DirectX-Headers"
+
+        if dxheaders_dir.exists() and not overwrite:
+            print("  DirectX-Headers already exists, skipping")
+        else:
+            if dxheaders_dir.exists():
+                shutil.rmtree(dxheaders_dir)
+
+            git_clone(DIRECTX_HEADERS_REPO, dxheaders_dir, depth=1)
+            print("  [OK] DirectX-Headers")
+        print()
+    else:
+        print("[5/7] DirectX-Headers - Skipped (--skip-directx-headers)")
+        print()
+
+    # 6. ANGLE (can be skipped with --skip-angle if already downloaded)
     if not args.skip_angle:
         print("=" * 50)
-        print("[5/7] ANGLE")
+        print("[6/7] ANGLE")
         print("=" * 50)
         
         angle_dir = deps_dir / "angle"
@@ -633,33 +654,9 @@ def sync_deps(args):
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
         print()
     else:
-        print("[5/7] ANGLE - Skipped (--skip-angle)")
+        print("[6/7] ANGLE - Skipped (--skip-angle)")
         print()
-    
-    # 6. DirectX-Headers (Windows D3D12 helper headers)
-    if not args.skip_directx_headers:
-        print("=" * 50)
-        print("[6/7] DirectX-Headers")
-        print("=" * 50)
-        
-        dxh_dir = deps_dir / "DirectX-Headers"
-        
-        if dxh_dir.exists() and not overwrite:
-            print("  DirectX-Headers already exists, skipping")
-        else:
-            if dxh_dir.exists():
-                shutil.rmtree(dxh_dir)
-            
-            url = f"https://github.com/microsoft/DirectX-Headers/archive/refs/tags/v{DIRECTX_HEADERS_VERSION}.zip"
-            archive = download_file(url, downloads_dir, f"DirectX-Headers-{DIRECTX_HEADERS_VERSION}.zip",
-                                   proxy=args.proxy)
-            extract_archive(archive, dxh_dir)
-            print(f"  [OK] DirectX-Headers v{DIRECTX_HEADERS_VERSION}")
-        print()
-    else:
-        print("[6/7] DirectX-Headers - Skipped (--skip-directx-headers)")
-        print()
-    
+
     # 7. Skia
     if not args.skip_skia:
         print("=" * 50)
@@ -714,7 +711,7 @@ def sync_deps(args):
     print("=" * 50)
     print()
     print("Dependencies downloaded:")
-    for name in ["SDL3", "vk-bootstrap", "spdlog", "CLI11", "angle", "DirectX-Headers", "skia", "depot_tools"]:
+    for name in ["SDL3", "vk-bootstrap", "spdlog", "CLI11", "DirectX-Headers", "angle", "skia", "depot_tools"]:
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
