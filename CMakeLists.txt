@@ -708,6 +708,9 @@ add_executable(${PROJECT_NAME}
     # ANGLE backend files
     src/renderer/AngleContext.cpp
     src/renderer/AngleRenderer.cpp
+    # D3D12 backend files (Windows only)
+    $<${WIN32}:src/renderer/D3DContext.cpp>
+    $<${WIN32}:src/renderer/D3DRenderer.cpp>
 )
 
 # Enable Vulkan backend
@@ -748,7 +751,7 @@ set(LINK_LIBS
 if(WIN32)
     list(APPEND LINK_LIBS
         user32 gdi32 shell32 ole32 oleaut32 imm32 winmm version setupapi dwmapi
-        fontsub dwrite d3d12 dxgi opengl32
+        fontsub dwrite d3d12 dxgi d3dcompiler opengl32
     )
 else()
     list(APPEND LINK_LIBS

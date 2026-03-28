@@ -127,6 +127,9 @@ skia_renderer::BackendType parseBackend(const std::string& str) {
     if (lower == "angle" || lower == "es" || lower == "gles") {
         return skia_renderer::BackendType::ANGLE;
     }
+    if (lower == "d3d12" || lower == "d3d" || lower == "direct3d") {
+        return skia_renderer::BackendType::D3D12;
+    }
     // Default to Vulkan
     return skia_renderer::BackendType::Vulkan;
 }
@@ -180,7 +183,7 @@ int main(int argc, char* argv[]) {
     
     // Backend selection
     app.add_option("-b,--backend", backendStr, 
-                   "Rendering backend: 'vulkan' (Graphite), 'opengl' (Ganesh), or 'angle' (OpenGL ES via ANGLE)");
+                   "Rendering backend: 'vulkan' (Graphite), 'opengl' (Ganesh), 'angle' (OpenGL ES via ANGLE), or 'd3d12' (Ganesh D3D12, Windows only)");
     
     // ANGLE-specific options
     app.add_option("--angle-backend", angleBackendStr, 
@@ -206,8 +209,9 @@ int main(int argc, char* argv[]) {
     // Handle --version early
     if (show_version) {
         std::cout << "Skia Renderer v1.2.0" << std::endl;
-        std::cout << "Supported backends: Vulkan (Graphite), OpenGL (Ganesh), ANGLE (OpenGL ES)" << std::endl;
+        std::cout << "Supported backends: Vulkan (Graphite), OpenGL (Ganesh), ANGLE (OpenGL ES), D3D12 (Ganesh)" << std::endl;
         std::cout << "ANGLE backends: Auto, Vulkan, D3D11, D3D9, Metal, OpenGL, OpenGL ES" << std::endl;
+        std::cout << "Note: D3D12 backend is only available on Windows" << std::endl;
         return 0;
     }
     
@@ -262,6 +266,16 @@ int main(int argc, char* argv[]) {
             backendConfig.angleMajor = 3;
             backendConfig.angleMinor = 0;
         }
+    } else if (backendConfig.type == skia_renderer::BackendType::D3D12) {
+#ifndef _WIN32
+        LOG_WARN("D3D12 backend is only available on Windows. Falling back to OpenGL.");
+        backendConfig.type = skia_renderer::BackendType::OpenGL;
+        auto glVersion = parseGLVersion(glVersionStr);
+        backendConfig.glMajor = glVersion.major;
+        backendConfig.glMinor = glVersion.minor;
+#else
+        LOG_INFO("D3D12 backend selected (native Windows rendering)");
+#endif
     } else {
         auto glVersion = parseGLVersion(glVersionStr);
         backendConfig.glMajor = glVersion.major;

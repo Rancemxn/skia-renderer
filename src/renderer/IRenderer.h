@@ -12,7 +12,8 @@ namespace skia_renderer {
 enum class BackendType {
     Vulkan,     // Graphite Vulkan backend (default)
     OpenGL,     // Ganesh OpenGL backend (native)
-    ANGLE       // Ganesh OpenGL ES via ANGLE (translates to Vulkan/D3D11/Metal)
+    ANGLE,      // Ganesh OpenGL ES via ANGLE (translates to Vulkan/D3D11/Metal)
+    D3D12       // Ganesh Direct3D 12 backend (Windows only)
 };
 
 // ANGLE backend type enumeration
@@ -45,6 +46,8 @@ struct BackendConfig {
                 return "OpenGL " + std::to_string(glMajor) + "." + std::to_string(glMinor);
             case BackendType::ANGLE:
                 return "ANGLE (OpenGL ES " + std::to_string(angleMajor) + "." + std::to_string(angleMinor) + ")";
+            case BackendType::D3D12:
+                return "Direct3D 12";
         }
         return "Unknown";
     }

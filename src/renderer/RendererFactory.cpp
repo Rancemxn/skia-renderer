@@ -3,6 +3,7 @@
 #include "core/Logger.h"
 
 #include "AngleRenderer.h"
+#include "D3DRenderer.h"
 
 #ifdef VULKAN_BACKEND_ENABLED
 #include "SkiaRenderer.h"
@@ -31,6 +32,14 @@ std::unique_ptr<IRenderer> RendererFactory::create(BackendType type) {
             LOG_WARN("ANGLE backend not available, falling back to OpenGL");
             return std::make_unique<GLRenderer>();
 #endif
+        case BackendType::D3D12:
+#ifdef _WIN32
+            LOG_INFO("Creating D3D12 (Ganesh) renderer");
+            return std::make_unique<D3DRenderer>();
+#else
+            LOG_WARN("D3D12 backend only available on Windows, falling back to OpenGL");
+            return std::make_unique<GLRenderer>();
+#endif
     }
     
     LOG_ERROR("Unknown backend type, defaulting to OpenGL");
@@ -45,6 +54,8 @@ std::string RendererFactory::getBackendName(BackendType type) {
             return "OpenGL (Ganesh)";
         case BackendType::ANGLE:
             return "ANGLE (OpenGL ES)";
+        case BackendType::D3D12:
+            return "D3D12 (Ganesh)";
     }
     return "Unknown";
 }
@@ -61,6 +72,12 @@ bool RendererFactory::isBackendAvailable(BackendType type) {
             return true;
         case BackendType::ANGLE:
 #ifdef USE_ANGLE
+            return true;
+#else
+            return false;
+#endif
+        case BackendType::D3D12:
+#ifdef _WIN32
             return true;
 #else
             return false;
