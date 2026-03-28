@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       bump_major:
-        description: 'Bump major version (e.g., 1.x.x -> 2.0.0)'
+        description: 'Bump major version (e.g., 2.0.x -> 3.0.0)'
         required: false
         default: 'false'
         type: boolean
       bump_minor:
-        description: 'Bump minor version (e.g., 1.2.x -> 1.3.0)'
+        description: 'Bump minor version (e.g., 2.0.x -> 2.1.0)'
         required: false
         default: 'false'
         type: boolean
@@ -40,60 +40,57 @@ jobs:
       - name: Read current version
         id: current_version
         run: |
-          VERSION=$(cat VERSION)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Current version: $VERSION"
+          # VERSION file format: "MAJOR_MINOR BUILD_NUMBER"
+          # Example: "20 235" means v2.0.235
+          # MAJOR_MINOR = MAJOR * 10 + MINOR (e.g., 20 = 2.0, 14 = 1.4)
+          read MAJOR_MINOR BUILD_NUMBER < VERSION
+          echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          
+          # Parse MAJOR and MINOR from MAJOR_MINOR
+          MAJOR=$((MAJOR_MINOR / 10))
+          MINOR=$((MAJOR_MINOR % 10))
+          echo "current_version=${MAJOR}.${MINOR}.${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+          echo "Current VERSION file: $MAJOR_MINOR $BUILD_NUMBER (v${MAJOR}.${MINOR}.${BUILD_NUMBER})"
 
       - name: Calculate new version
         id: new_version
         run: |
-          # Find the latest semantic version tag (vMAJOR.MINOR.PATCH)
-          LATEST_TAG=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-          echo "Latest tag: ${LATEST_TAG:-none}"
-
-          if [ -z "$LATEST_TAG" ]; then
-            # No existing tags, start with v1.0.0
-            CURRENT_MAJOR=0
-            CURRENT_MINOR=0
-            CURRENT_PATCH=0
-          else
-            # Parse current version from tag
-            CURRENT_MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | tr -d 'v')
-            CURRENT_MINOR=$(echo $LATEST_TAG | cut -d. -f2)
-            CURRENT_PATCH=$(echo $LATEST_TAG | cut -d. -f3)
-          fi
-
-          echo "Current: MAJOR=$CURRENT_MAJOR, MINOR=$CURRENT_MINOR, PATCH=$CURRENT_PATCH"
-
+          CURRENT_MAJOR_MINOR=${{ steps.current_version.outputs.major_minor }}
+          CURRENT_BUILD=${{ steps.current_version.outputs.build_number }}
+          
           if [ "${{ inputs.bump_major }}" = "true" ]; then
-            # Bump major: MAJOR+1, MINOR=0, PATCH=0
-            NEW_MAJOR=$((CURRENT_MAJOR + 1))
-            NEW_MINOR=0
-            NEW_PATCH=0
+            # Bump major: MAJOR_MINOR + 10, BUILD = 0
+            # Example: 20 (2.0) -> 30 (3.0)
+            NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 10))
+            NEW_BUILD=0
           elif [ "${{ inputs.bump_minor }}" = "true" ]; then
-            # Bump minor: MAJOR unchanged, MINOR+1, PATCH=0
-            NEW_MAJOR=$CURRENT_MAJOR
-            NEW_MINOR=$((CURRENT_MINOR + 1))
-            NEW_PATCH=0
+            # Bump minor: MAJOR_MINOR + 1, BUILD = 0
+            # Example: 20 (2.0) -> 21 (2.1)
+            NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 1))
+            NEW_BUILD=0
           else
-            # Bump patch (default): MAJOR unchanged, MINOR unchanged, PATCH+1
-            NEW_MAJOR=$CURRENT_MAJOR
-            NEW_MINOR=$CURRENT_MINOR
-            NEW_PATCH=$((CURRENT_PATCH + 1))
+            # Default: bump build number only
+            NEW_MAJOR_MINOR=$CURRENT_MAJOR_MINOR
+            NEW_BUILD=$((CURRENT_BUILD + 1))
           fi
-
-          NEW_TAG="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
-          NEW_VERSION_STRING="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
-
-          echo "new_version=${NEW_VERSION_STRING}" >> $GITHUB_OUTPUT
+          
+          # Parse final version
+          NEW_MAJOR=$((NEW_MAJOR_MINOR / 10))
+          NEW_MINOR=$((NEW_MAJOR_MINOR % 10))
+          NEW_TAG="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_BUILD}"
+          
+          echo "new_major_minor=$NEW_MAJOR_MINOR" >> $GITHUB_OUTPUT
+          echo "new_build=$NEW_BUILD" >> $GITHUB_OUTPUT
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-          echo "New tag: $NEW_TAG (MAJOR=$NEW_MAJOR, MINOR=$NEW_MINOR, PATCH=$NEW_PATCH)"
+          echo "new_version=${NEW_MAJOR}.${NEW_MINOR}.${NEW_BUILD}" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_TAG (MAJOR_MINOR=$NEW_MAJOR_MINOR, BUILD=$NEW_BUILD)"
 
       - name: Update VERSION and commit on develop
         run: |
-          echo "${{ steps.new_version.outputs.new_version }}" > VERSION
+          echo "${{ steps.new_version.outputs.new_major_minor }} ${{ steps.new_version.outputs.new_build }}" > VERSION
           git add VERSION
-          git commit -m "chore: bump version to ${{ steps.new_version.outputs.new_version }}"
+          git commit -m "chore: bump version to ${{ steps.new_version.outputs.new_tag }}"
           git push origin develop
 
       - name: Merge develop into main
@@ -145,7 +142,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Previous Version | ${{ steps.current_version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Previous Version | ${{ steps.current_version.outputs.current_version }} |" >> $GITHUB_STEP_SUMMARY
           echo "| New Version | ${{ steps.new_version.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| VERSION File | ${{ steps.new_version.outputs.new_major_minor }} ${{ steps.new_version.outputs.new_build }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tag | ${{ steps.new_version.outputs.new_tag }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Draft | ${{ inputs.draft }} |" >> $GITHUB_STEP_SUMMARY
