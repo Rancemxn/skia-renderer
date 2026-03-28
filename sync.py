@@ -652,25 +652,25 @@ def sync_deps(args):
             if platform.system() == "Windows":
                 env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
             
-            if platform.system() == "Windows":
-                gclient = depot_dir / "gclient.bat"
-            else:
-                gclient = depot_dir / "gclient"
+            # Directly use system Python to call gclient.py, bypassing vpython3
+            # which has its own output buffering that prevents real-time logs
+            gclient_py = depot_dir / "gclient.py"
+            gclient_cmd = [sys.executable, str(gclient_py)]
             
             # Configure gclient for ANGLE (let gclient manage the clone)
             print("  Configuring gclient for ANGLE...", flush=True)
             gclient_spec = f"solutions = [ {{ 'name': '.', 'url': 'https://chromium.googlesource.com/angle/angle.git@{ANGLE_COMMIT}', 'deps_file': 'DEPS', 'managed': True, 'custom_vars': {{}}, }}, ];"
-            run_cmd([str(gclient), "config", "--spec", gclient_spec],
+            run_cmd(gclient_cmd + ["config", "--spec", gclient_spec],
                    cwd=str(angle_dir), env=env, verbose=verbose)
             
             # Run gclient sync (this will clone ANGLE + all dependencies)
             print("  Running gclient sync for ANGLE...", flush=True)
-            run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
+            run_cmd(gclient_cmd + ["sync", "--with_branch_heads", "--with_tags"],
                    cwd=str(angle_dir), env=env, check=False, verbose=verbose)
             
             # Run gclient runhooks
             print("  Running gclient runhooks...", flush=True)
-            run_cmd([str(gclient), "runhooks"],
+            run_cmd(gclient_cmd + ["runhooks"],
                    cwd=str(angle_dir), env=env, check=False, verbose=verbose)
             
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})", flush=True)
