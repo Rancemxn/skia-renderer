@@ -1,0 +1,129 @@
+name: Version Bumper
+
+on:
+  push:
+    branches:
+      - develop
+    paths-ignore:
+      - 'VERSION'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      bump_major:
+        description: 'Bump major version'
+        required: false
+        type: boolean
+      bump_minor:
+        description: 'Bump minor version'
+        required: false
+        type: boolean
+      prerelease:
+        description: 'Create as pre-release'
+        required: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  version-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Read current version
+        id: current_version
+        run: |
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$(cat VERSION)"
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+          echo "version=${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
+
+      - name: Calculate new version
+        id: new_version
+        run: |
+          MAJOR=${{ steps.current_version.outputs.major }}
+          MINOR=${{ steps.current_version.outputs.minor }}
+          PATCH=${{ steps.current_version.outputs.patch }}
+          IS_RELEASE=false
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.bump_major }}" = "true" ] || [ "${{ inputs.bump_minor }}" = "true" ]; then
+              IS_RELEASE=true
+            fi
+
+            if [ "${{ inputs.bump_major }}" = "true" ]; then
+              MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+            elif [ "${{ inputs.bump_minor }}" = "true" ]; then
+              MINOR=$((MINOR + 1)); PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+          else
+            PATCH=$((PATCH + 1))
+          fi
+          
+          echo "new_version=${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+
+      - name: Update VERSION and commit
+        run: |
+          echo "${{ steps.new_version.outputs.new_version }}" > VERSION
+          git add VERSION
+          git commit -m "chore: bump version to v${{ steps.new_version.outputs.new_version }}"
+          git push origin develop
+
+      - name: Release process
+        if: steps.new_version.outputs.is_release == 'true'
+        run: |
+          TAG="v${{ steps.new_version.outputs.new_version }}"
+          
+          rollback() {
+            echo "::error::Release process failed. Rolling back..."
+            git checkout develop
+            git tag -d $TAG || true
+            git push origin :$TAG || true
+            exit 1
+          }
+          trap rollback ERR
+
+          git fetch origin main:main
+          git checkout main
+          git merge develop --no-ff -m "chore: merge develop for release $TAG"
+          git push origin main
+          
+          git tag -a $TAG -m "Release $TAG"
+          git push origin $TAG
+          
+          git checkout develop
+          git merge main -m "chore: sync with main after release $TAG"
+          git push origin develop
+
+      - name: Create GitHub Release
+        if: steps.new_version.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.new_version.outputs.new_version }}
+          name: Release ${{ steps.new_version.outputs.new_version }}
+          body: "Automatic release for version ${{ steps.new_version.outputs.new_version }}"
+          prerelease: ${{ inputs.prerelease == 'true' }}
+
+      - name: Summary
+        run: |
+          echo "### Bump Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: \`${{ steps.new_version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          ACTION_TYPE="Build"
+          if [ "${{ steps.new_version.outputs.is_release }}" = "true" ]; then
+            ACTION_TYPE="Release"
+          fi
+          echo "- **Action**: \`${ACTION_TYPE}\`" >> $GITHUB_STEP_SUMMARY
