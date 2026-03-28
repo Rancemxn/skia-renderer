@@ -687,6 +687,8 @@ def build_main_project(script_dir: Path, build_type: str,
     # Enable verbose CMake dependency output
     if verbose:
         cmd.append("-DVERBOSE_DEPS=ON")
+    else:
+        cmd.append("-DVERBOSE_DEPS=OFF")
     
     # Print CMake variables only in verbose mode
     if verbose:
