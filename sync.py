@@ -648,6 +648,7 @@ def sync_deps(args):
             env["PATH"] = str(depot_dir) + os.pathsep + env.get("PATH", "")
             env["DEPOT_TOOLS_UPDATE"] = "0"
             env["GCLIENT_PY3"] = "1"
+            env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered Python output
 
             if platform.system() == "Windows":
                 env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
