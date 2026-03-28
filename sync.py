@@ -623,7 +623,7 @@ def sync_deps(args):
         # Ensure depot_tools exists (needed for gclient)
         if not depot_dir.exists():
             depot_url = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
-            git_clone(depot_url, depot_dir, verbose=verbose)
+            git_clone(depot_url, depot_dir, depth=1, verbose=verbose)
         else:
             print(f"  depot_tools already exists: {depot_dir}", flush=True)
         
@@ -663,7 +663,7 @@ def sync_deps(args):
             
             # Run gclient sync (this will clone ANGLE + all dependencies)
             print("  Running gclient sync for ANGLE...", flush=True)
-            run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
+            run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
                    cwd=str(angle_dir), env=env, check=False, verbose=verbose)
             
             # Run gclient runhooks
@@ -689,7 +689,7 @@ def sync_deps(args):
         # Clone depot_tools
         if not depot_dir.exists():
             depot_url = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
-            git_clone(depot_url, depot_dir, verbose=verbose)
+            git_clone(depot_url, depot_dir, depth=1, verbose=verbose)
         else:
             print(f"  depot_tools already exists: {depot_dir}", flush=True)
         
@@ -709,7 +709,7 @@ def sync_deps(args):
                 shutil.rmtree(skia_dir)
             
             skia_url = "https://skia.googlesource.com/skia.git"
-            git_clone(skia_url, skia_dir, branch="chrome/m147", verbose=verbose)
+            git_clone(skia_url, skia_dir, depth=1, branch="chrome/m147", verbose=verbose)
         
         # Sync dependencies
         print("  Syncing Skia dependencies...", flush=True)
