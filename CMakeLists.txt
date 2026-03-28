@@ -783,7 +783,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${ANGLE_INCLUDE_DIR}/GLES3
     ${ANGLE_INCLUDE_DIR}/KHR
     # DirectX-Headers include directory (Windows only)
-    $<$<WIN32>:${DIRECTX_HEADERS_INCLUDE_DIR}>
+    $<$<PLATFORM_ID:Windows>:${DIRECTX_HEADERS_INCLUDE_DIR}>
 )
 
 # ========================================
