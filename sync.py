@@ -52,21 +52,14 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, ve
     
     print(f"  Running: {' '.join(str(c) for c in cmd)}", flush=True)
     
-    # Use Popen for real-time output streaming
+    # Let child process inherit stdout/stderr directly for real-time output
+    # This avoids pipe buffering issues where child processes detect non-TTY
+    # and switch to block buffering (4KB-8KB), causing delayed output
     process = subprocess.Popen(
         cmd, 
         cwd=cwd, 
         env=merged_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,  # Line buffered
-        universal_newlines=True
     )
-    
-    # Stream output in real-time
-    for line in process.stdout:
-        print(line, end='', flush=True)
     
     process.wait()
     
