@@ -648,46 +648,27 @@ def sync_deps(args):
             env["PATH"] = str(depot_dir) + os.pathsep + env.get("PATH", "")
             env["DEPOT_TOOLS_UPDATE"] = "0"
             env["GCLIENT_PY3"] = "1"
-            env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered Python output
 
             if platform.system() == "Windows":
                 env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
-            
-            # Initialize vpython3/cipd first, then use vpython3.exe directly
-            # This bypasses bat file buffering and allows direct control
-            gclient_py = depot_dir / "gclient.py"
-            if platform.system() == "Windows":
-                vpython_bat = depot_dir / "vpython3.bat"
-                vpython_exe = depot_dir / ".cipd_bin" / "vpython3.exe"
-                cipd_setup = depot_dir / "cipd_bin_setup.bat"
-                
-                # Initialize cipd if vpython3.exe doesn't exist
-                if not vpython_exe.exists():
-                    print("  Initializing vpython3/cipd...", flush=True)
-                    run_cmd([str(cipd_setup)], cwd=str(depot_dir), env=env, check=False)
+                gclient = depot_dir / "gclient.bat"
             else:
-                vpython_exe = depot_dir / ".cipd_bin" / "vpython3"
-                vpython_bat = depot_dir / "vpython3"
-                if not vpython_exe.exists():
-                    run_cmd([str(vpython_bat), "--version"], cwd=str(depot_dir), env=env, check=False)
-            
-            # Use vpython3.exe directly with -u flag for unbuffered output
-            gclient_cmd = [str(vpython_exe), "-u", str(gclient_py)]
+                gclient = depot_dir / "gclient"
             
             # Configure gclient for ANGLE (let gclient manage the clone)
             print("  Configuring gclient for ANGLE...", flush=True)
             gclient_spec = f"solutions = [ {{ 'name': '.', 'url': 'https://chromium.googlesource.com/angle/angle.git@{ANGLE_COMMIT}', 'deps_file': 'DEPS', 'managed': True, 'custom_vars': {{}}, }}, ];"
-            run_cmd(gclient_cmd + ["config", "--spec", gclient_spec],
+            run_cmd([str(gclient), "config", "--spec", gclient_spec],
                    cwd=str(angle_dir), env=env, verbose=verbose)
             
             # Run gclient sync (this will clone ANGLE + all dependencies)
             print("  Running gclient sync for ANGLE...", flush=True)
-            run_cmd(gclient_cmd + ["sync", "--with_branch_heads", "--with_tags"],
+            run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
                    cwd=str(angle_dir), env=env, check=False, verbose=verbose)
             
             # Run gclient runhooks
             print("  Running gclient runhooks...", flush=True)
-            run_cmd(gclient_cmd + ["runhooks"],
+            run_cmd([str(gclient), "runhooks"],
                    cwd=str(angle_dir), env=env, check=False, verbose=verbose)
             
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})", flush=True)
