@@ -37,18 +37,6 @@ jobs:
         with:
           version: "20"
 
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: "a34c873a9717a888f58dc05268dea15592c2f0ff"
-
-      - name: Install vcpkg packages
-        run: |
-          echo "Installing libusb..."
-          vcpkg install libusb:x64-windows
-        env:
-          VCPKG_DEFAULT_TRIPLET: x64-windows
-
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
         with:
