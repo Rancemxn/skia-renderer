@@ -55,8 +55,13 @@ jobs:
           MAJOR=${{ steps.current_version.outputs.major }}
           MINOR=${{ steps.current_version.outputs.minor }}
           PATCH=${{ steps.current_version.outputs.patch }}
+          IS_RELEASE=false
           
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.bump_major }}" = "true" ] || [ "${{ inputs.bump_minor }}" = "true" ]; then
+              IS_RELEASE=true
+            fi
+
             if [ "${{ inputs.bump_major }}" = "true" ]; then
               MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
             elif [ "${{ inputs.bump_minor }}" = "true" ]; then
@@ -69,6 +74,7 @@ jobs:
           fi
           
           echo "new_version=${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
 
       - name: Update VERSION and commit
         run: |
@@ -78,7 +84,7 @@ jobs:
           git push origin develop
 
       - name: Release process
-        if: github.event_name == 'workflow_dispatch'
+        if: steps.new_version.outputs.is_release == 'true'
         run: |
           TAG="v${{ steps.new_version.outputs.new_version }}"
           
@@ -104,7 +110,7 @@ jobs:
           git push origin develop
 
       - name: Create GitHub Release
-        if: github.event_name == 'workflow_dispatch'
+        if: steps.new_version.outputs.is_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.new_version.outputs.new_version }}
@@ -116,4 +122,8 @@ jobs:
         run: |
           echo "### Bump Summary" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: \`${{ steps.new_version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Action**: \`${{ github.event_name == 'workflow_dispatch' && 'Release' || 'Build' }}\`" >> $GITHUB_STEP_SUMMARY
+          ACTION_TYPE="Build"
+          if [ "${{ steps.new_version.outputs.is_release }}" = "true" ]; then
+            ACTION_TYPE="Release"
+          fi
+          echo "- **Action**: \`${ACTION_TYPE}\`" >> $GITHUB_STEP_SUMMARY
