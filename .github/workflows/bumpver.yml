@@ -21,6 +21,11 @@ on:
         description: 'Create as pre-release'
         required: false
         type: boolean
+      skip_build:
+        description: 'Skip Windows build (for testing)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -108,9 +113,13 @@ jobs:
   # ========================================
   build-windows:
     needs: version-bump
-    if: needs.version-bump.outputs.is_release == 'true'
+    if: needs.version-bump.outputs.is_release == 'true' && inputs.skip_build != true
     runs-on: windows-latest
     timeout-minutes: 180
+    env:
+      SCCACHE_DIR: ${{ github.workspace }}\.cache\sccache
+      SCCACHE_CACHE_SIZE: 5G
+      PYTHONUNBUFFERED: 1
     
     steps:
       - name: Checkout repository
@@ -124,10 +133,22 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install LLVM and Clang
+      - name: Install LLVM and Clang 20
         uses: KyleMayes/install-llvm-action@v2
         with:
-          version: "18"
+          version: "20"
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "a34c873a9717a888f58dc05268dea15592c2f0ff"
+
+      - name: Install vcpkg packages
+        run: |
+          echo "Installing libusb..."
+          vcpkg install libusb:x64-windows
+        env:
+          VCPKG_DEFAULT_TRIPLET: x64-windows
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
@@ -155,15 +176,19 @@ jobs:
       # Sync Dependencies
       # ----------------------------------------
       - name: Sync dependencies
-        run: python sync.py
+        run: python -u sync.py -v
         timeout-minutes: 30
+        env:
+          SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
 
       # ----------------------------------------
       # Build Release
       # ----------------------------------------
       - name: Build Release
-        run: python build.py --build-type Release
+        run: python -u build.py --build-type Release
         timeout-minutes: 120
+        env:
+          SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
 
       # ----------------------------------------
       # Show sccache stats

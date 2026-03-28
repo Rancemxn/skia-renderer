@@ -44,13 +44,13 @@ def find_tool(name: str, extra_paths: list = None) -> str:
     
     return None
 
-def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) -> subprocess.CompletedProcess:
+def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False) -> subprocess.CompletedProcess:
     """Run a command"""
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
     
-    print(f"  Running: {' '.join(str(c) for c in cmd)}")
+    print(f"  Running: {' '.join(str(c) for c in cmd)}", flush=True)
     result = subprocess.run(cmd, cwd=cwd, env=merged_env)
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, cmd)
@@ -61,7 +61,7 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None) ->
 # ========================================
 
 def download_with_aria2(url: str, output_dir: Path, filename: str, 
-                        proxy: str = None) -> Path:
+                        proxy: str = None, verbose: bool = False) -> Path:
     """Download using aria2c (fast, multi-threaded)"""
     aria2 = find_tool("aria2c")
     if not aria2:
@@ -80,16 +80,19 @@ def download_with_aria2(url: str, output_dir: Path, filename: str,
         url
     ]
     
+    if verbose:
+        cmd.append("-v")  # aria2 verbose mode
+    
     if proxy:
         cmd.extend(["--all-proxy", proxy])
     
-    print(f"  Downloading (aria2): {filename}")
-    run_cmd(cmd)
+    print(f"  Downloading (aria2): {filename}", flush=True)
+    run_cmd(cmd, verbose=verbose)
     
     return output_path if output_path.exists() else None
 
 def download_with_curl(url: str, output_dir: Path, filename: str,
-                       proxy: str = None) -> Path:
+                       proxy: str = None, verbose: bool = False) -> Path:
     """Download using curl (fallback)"""
     curl = find_tool("curl")
     if not curl:
@@ -103,18 +106,21 @@ def download_with_curl(url: str, output_dir: Path, filename: str,
         "--retry", "3",
     ]
     
+    if verbose:
+        cmd.append("-v")  # curl verbose mode
+    
     if proxy:
         cmd.extend(["--proxy", proxy])
     
     cmd.append(url)
     
-    print(f"  Downloading (curl): {filename}")
-    run_cmd(cmd)
+    print(f"  Downloading (curl): {filename}", flush=True)
+    run_cmd(cmd, verbose=verbose)
     
     return output_path if output_path.exists() else None
 
 def download_with_wget(url: str, output_dir: Path, filename: str,
-                       proxy: str = None) -> Path:
+                       proxy: str = None, verbose: bool = False) -> Path:
     """Download using wget (fallback)"""
     wget = find_tool("wget")
     if not wget:
@@ -124,39 +130,42 @@ def download_with_wget(url: str, output_dir: Path, filename: str,
     
     cmd = [wget, "-O", str(output_path)]
     
+    if verbose:
+        cmd.append("-v")  # wget verbose mode
+    
     if proxy:
         cmd.extend(["-e", f"http_proxy={proxy}", "-e", f"https_proxy={proxy}"])
     
     cmd.append(url)
     
-    print(f"  Downloading (wget): {filename}")
-    run_cmd(cmd)
+    print(f"  Downloading (wget): {filename}", flush=True)
+    run_cmd(cmd, verbose=verbose)
     
     return output_path if output_path.exists() else None
 
 def download_file(url: str, output_dir: Path, filename: str,
-                  proxy: str = None) -> Path:
+                  proxy: str = None, verbose: bool = False) -> Path:
     """Download a file using available tool"""
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / filename
     
     # Skip if already downloaded
     if output_path.exists():
-        print(f"  Already exists: {filename}")
+        print(f"  Already exists: {filename}", flush=True)
         return output_path
     
     # Try tools in order of preference
     result = None
     
-    result = download_with_aria2(url, output_dir, filename, proxy)
+    result = download_with_aria2(url, output_dir, filename, proxy, verbose)
     if result:
         return result
     
-    result = download_with_curl(url, output_dir, filename, proxy)
+    result = download_with_curl(url, output_dir, filename, proxy, verbose)
     if result:
         return result
     
-    result = download_with_wget(url, output_dir, filename, proxy)
+    result = download_with_wget(url, output_dir, filename, proxy, verbose)
     if result:
         return result
     
@@ -166,13 +175,13 @@ def download_file(url: str, output_dir: Path, filename: str,
 # Extraction Functions
 # ========================================
 
-def extract_with_7z(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+def extract_with_7z(archive: Path, output_dir: Path, strip_components: int = 1, verbose: bool = False) -> Path:
     """Extract using 7z"""
     sevenzip = find_tool("7z")
     if not sevenzip:
         return None
     
-    print(f"  Extracting (7z): {archive.name}")
+    print(f"  Extracting (7z): {archive.name}", flush=True)
     
     if strip_components == 0:
         cmd = [sevenzip, "x", "-y", f"-o{output_dir}", str(archive)]
@@ -207,13 +216,13 @@ def extract_with_7z(archive: Path, output_dir: Path, strip_components: int = 1) 
     
     return output_dir
 
-def extract_with_unzip(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+def extract_with_unzip(archive: Path, output_dir: Path, strip_components: int = 1, verbose: bool = False) -> Path:
     """Extract zip using unzip"""
     unzip = find_tool("unzip")
     if not unzip or not str(archive).endswith('.zip'):
         return None
     
-    print(f"  Extracting (unzip): {archive.name}")
+    print(f"  Extracting (unzip): {archive.name}", flush=True)
     
     temp_dir = output_dir.parent / f"{output_dir.name}_temp"
     if temp_dir.exists():
@@ -241,7 +250,7 @@ def extract_with_unzip(archive: Path, output_dir: Path, strip_components: int = 
     
     return output_dir
 
-def extract_with_tar(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+def extract_with_tar(archive: Path, output_dir: Path, strip_components: int = 1, verbose: bool = False) -> Path:
     """Extract tar archives using tar command"""
     tar = find_tool("tar")
     if not tar:
@@ -253,7 +262,7 @@ def extract_with_tar(archive: Path, output_dir: Path, strip_components: int = 1)
             name.endswith('.tar')):
         return None
     
-    print(f"  Extracting (tar): {archive.name}")
+    print(f"  Extracting (tar): {archive.name}", flush=True)
     
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -280,9 +289,9 @@ def extract_with_tar(archive: Path, output_dir: Path, strip_components: int = 1)
     
     return output_dir
 
-def extract_with_python(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+def extract_with_python(archive: Path, output_dir: Path, strip_components: int = 1, verbose: bool = False) -> Path:
     """Extract using Python's built-in modules (fallback)"""
-    print(f"  Extracting (Python): {archive.name}")
+    print(f"  Extracting (Python): {archive.name}", flush=True)
     
     temp_dir = output_dir.parent / f"{output_dir.name}_temp"
     if temp_dir.exists():
@@ -310,7 +319,7 @@ def extract_with_python(archive: Path, output_dir: Path, strip_components: int =
         else:
             return None
     except Exception as e:
-        print(f"  Python extraction failed: {e}")
+        print(f"  Python extraction failed: {e}", flush=True)
         return None
     
     # Navigate through strip_components
@@ -331,27 +340,27 @@ def extract_with_python(archive: Path, output_dir: Path, strip_components: int =
     
     return output_dir
 
-def extract_archive(archive: Path, output_dir: Path, strip_components: int = 1) -> Path:
+def extract_archive(archive: Path, output_dir: Path, strip_components: int = 1, verbose: bool = False) -> Path:
     """Extract an archive using available tool"""
     result = None
     
     # Try 7z first (handles all formats)
-    result = extract_with_7z(archive, output_dir, strip_components)
+    result = extract_with_7z(archive, output_dir, strip_components, verbose)
     if result:
         return result
     
     # Try native tar
-    result = extract_with_tar(archive, output_dir, strip_components)
+    result = extract_with_tar(archive, output_dir, strip_components, verbose)
     if result:
         return result
     
     # Try unzip for zip files
-    result = extract_with_unzip(archive, output_dir, strip_components)
+    result = extract_with_unzip(archive, output_dir, strip_components, verbose)
     if result:
         return result
     
     # Try Python's built-in (last resort)
-    result = extract_with_python(archive, output_dir, strip_components)
+    result = extract_with_python(archive, output_dir, strip_components, verbose)
     if result:
         return result
     
@@ -361,14 +370,14 @@ def extract_archive(archive: Path, output_dir: Path, strip_components: int = 1) 
 # Git Clone
 # ========================================
 
-def git_clone(url: str, target_dir: Path, depth: int = 1, branch: str = None) -> Path:
+def git_clone(url: str, target_dir: Path, depth: int = 1, branch: str = None, verbose: bool = False) -> Path:
     """Clone a git repository"""
     git = find_tool("git")
     if not git:
         raise RuntimeError("git not found")
     
     if target_dir.exists():
-        print(f"  Removing existing: {target_dir}")
+        print(f"  Removing existing: {target_dir}", flush=True)
         shutil.rmtree(target_dir)
     
     cmd = [git, "clone"]
@@ -376,42 +385,48 @@ def git_clone(url: str, target_dir: Path, depth: int = 1, branch: str = None) ->
         cmd.extend(["--depth", str(depth)])
     if branch:
         cmd.extend(["--branch", branch])
+    if verbose:
+        cmd.append("--verbose")  # git verbose output
     cmd.extend([url, str(target_dir)])
     
-    print(f"  Cloning: {url}")
-    run_cmd(cmd)
+    print(f"  Cloning: {url}", flush=True)
+    run_cmd(cmd, verbose=verbose)
     
     return target_dir
 
-def git_clone_at_commit(url: str, target_dir: Path, commit: str, depth: int = 1) -> Path:
+def git_clone_at_commit(url: str, target_dir: Path, commit: str, depth: int = 1, verbose: bool = False) -> Path:
     """Clone a git repository at a specific commit"""
     git = find_tool("git")
     if not git:
         raise RuntimeError("git not found")
     
     if target_dir.exists():
-        print(f"  Removing existing: {target_dir}")
+        print(f"  Removing existing: {target_dir}", flush=True)
         shutil.rmtree(target_dir)
     
     # Clone with depth=1 for shallow clone, then fetch the specific commit
-    print(f"  Cloning: {url}")
+    print(f"  Cloning: {url}", flush=True)
     cmd = [git, "clone", "--no-checkout"]
     if depth:
         cmd.extend(["--depth", str(depth)])
+    if verbose:
+        cmd.append("--verbose")
     cmd.extend([url, str(target_dir)])
-    run_cmd(cmd)
+    run_cmd(cmd, verbose=verbose)
     
     # Fetch the specific commit
-    print(f"  Fetching commit: {commit[:8]}")
+    print(f"  Fetching commit: {commit[:8]}", flush=True)
     if depth:
         cmd = [git, "fetch", "--depth", "1", "origin", commit]
     else:
         cmd = [git, "fetch", "origin", commit]
-    run_cmd(cmd, cwd=str(target_dir))
+    if verbose:
+        cmd.append("--verbose")
+    run_cmd(cmd, cwd=str(target_dir), verbose=verbose)
     
     # Checkout the commit
     cmd = [git, "checkout", commit]
-    run_cmd(cmd, cwd=str(target_dir))
+    run_cmd(cmd, cwd=str(target_dir), verbose=verbose)
     
     return target_dir
 
@@ -433,7 +448,7 @@ def setup_angle_gclient(angle_dir: Path, commit: str) -> None:
     with open(gclient_file, 'w') as f:
         f.write(gclient_content)
     
-    print(f"  Created .gclient config")
+    print(f"  Created .gclient config", flush=True)
 
 # ========================================
 # Main
@@ -444,17 +459,18 @@ def sync_deps(args):
     script_dir = Path(__file__).parent.resolve()
     deps_dir = script_dir / "deps"
     downloads_dir = script_dir / "downloads"
+    verbose = args.verbose
     
     deps_dir.mkdir(parents=True, exist_ok=True)
     downloads_dir.mkdir(parents=True, exist_ok=True)
     
-    print("=" * 50)
-    print("Skia Renderer - Dependency Sync")
-    print("=" * 50)
-    print()
+    print("=" * 50, flush=True)
+    print("Skia Renderer - Dependency Sync", flush=True)
+    print("=" * 50, flush=True)
+    print(flush=True)
     
     # Check tools
-    print("[Checking Tools]")
+    print("[Checking Tools]", flush=True)
     
     tools = {
         "git": find_tool("git"),
@@ -480,33 +496,33 @@ def sync_deps(args):
     # Python is always available
     extract_tools.append("Python")
     
-    print(f"  git: {tools['git'] or 'NOT FOUND'}")
-    print(f"  Download: {', '.join(download_tools) or 'NONE'}")
-    print(f"  Extract: {', '.join(extract_tools)}")
-    print(f"  Python: {sys.executable}")
+    print(f"  git: {tools['git'] or 'NOT FOUND'}", flush=True)
+    print(f"  Download: {', '.join(download_tools) or 'NONE'}", flush=True)
+    print(f"  Extract: {', '.join(extract_tools)}", flush=True)
+    print(f"  Python: {sys.executable}", flush=True)
     
     if not tools["git"]:
-        print("\n  ERROR: git is required")
+        print("\n  ERROR: git is required", flush=True)
         return 1
     
     if not download_tools:
-        print("\n  ERROR: No download tool found (aria2c, curl, or wget)")
+        print("\n  ERROR: No download tool found (aria2c, curl, or wget)", flush=True)
         return 1
     
-    print()
+    print(flush=True)
     
     overwrite = not args.no_overwrite
     
     # 1. SDL3
     if not args.skip_sdl:
-        print("=" * 50)
-        print("[1/7] SDL3")
-        print("=" * 50)
+        print("=" * 50, flush=True)
+        print("[1/7] SDL3", flush=True)
+        print("=" * 50, flush=True)
         
         sdl_dir = deps_dir / "SDL3"
         
         if sdl_dir.exists() and not overwrite:
-            print("  SDL3 already exists, skipping")
+            print("  SDL3 already exists, skipping", flush=True)
         else:
             if sdl_dir.exists():
                 shutil.rmtree(sdl_dir)
@@ -514,100 +530,100 @@ def sync_deps(args):
             url = f"https://github.com/libsdl-org/SDL/archive/refs/tags/release-{SDL3_VERSION}.zip"
             
             archive = download_file(url, downloads_dir, f"SDL3-{SDL3_VERSION}.zip",
-                                   proxy=args.proxy)
-            extract_archive(archive, sdl_dir)
-            print("  [OK] SDL3")
-        print()
+                                   proxy=args.proxy, verbose=verbose)
+            extract_archive(archive, sdl_dir, verbose=verbose)
+            print("  [OK] SDL3", flush=True)
+        print(flush=True)
     
     # 2. vk-bootstrap
     if not args.skip_vkbootstrap:
-        print("=" * 50)
-        print("[2/7] vk-bootstrap")
-        print("=" * 50)
+        print("=" * 50, flush=True)
+        print("[2/7] vk-bootstrap", flush=True)
+        print("=" * 50, flush=True)
         
         vkb_dir = deps_dir / "vk-bootstrap"
         
         if vkb_dir.exists() and not overwrite:
-            print("  vk-bootstrap already exists, skipping")
+            print("  vk-bootstrap already exists, skipping", flush=True)
         else:
             if vkb_dir.exists():
                 shutil.rmtree(vkb_dir)
             
             url = f"https://github.com/charles-lunarg/vk-bootstrap/archive/refs/tags/v{VKBOOTSTRAP_VERSION}.zip"
             archive = download_file(url, downloads_dir, f"vk-bootstrap-{VKBOOTSTRAP_VERSION}.zip",
-                                   proxy=args.proxy)
-            extract_archive(archive, vkb_dir)
-            print("  [OK] vk-bootstrap")
-        print()
+                                   proxy=args.proxy, verbose=verbose)
+            extract_archive(archive, vkb_dir, verbose=verbose)
+            print("  [OK] vk-bootstrap", flush=True)
+        print(flush=True)
     
     # 3. spdlog (header-only library)
     if not args.skip_spdlog:
-        print("=" * 50)
-        print("[3/7] spdlog")
-        print("=" * 50)
+        print("=" * 50, flush=True)
+        print("[3/7] spdlog", flush=True)
+        print("=" * 50, flush=True)
         
         spdlog_dir = deps_dir / "spdlog"
         
         if spdlog_dir.exists() and not overwrite:
-            print("  spdlog already exists, skipping")
+            print("  spdlog already exists, skipping", flush=True)
         else:
             if spdlog_dir.exists():
                 shutil.rmtree(spdlog_dir)
             
             url = f"https://github.com/gabime/spdlog/archive/refs/tags/v{SPDLOG_VERSION}.zip"
             archive = download_file(url, downloads_dir, f"spdlog-{SPDLOG_VERSION}.zip",
-                                   proxy=args.proxy)
-            extract_archive(archive, spdlog_dir)
-            print("  [OK] spdlog")
-        print()
+                                   proxy=args.proxy, verbose=verbose)
+            extract_archive(archive, spdlog_dir, verbose=verbose)
+            print("  [OK] spdlog", flush=True)
+        print(flush=True)
     
     # 4. CLI11 (header-only library)
     if not args.skip_cli11:
-        print("=" * 50)
-        print("[4/7] CLI11")
-        print("=" * 50)
+        print("=" * 50, flush=True)
+        print("[4/7] CLI11", flush=True)
+        print("=" * 50, flush=True)
         
         cli11_dir = deps_dir / "CLI11"
         
         if cli11_dir.exists() and not overwrite:
-            print("  CLI11 already exists, skipping")
+            print("  CLI11 already exists, skipping", flush=True)
         else:
             if cli11_dir.exists():
                 shutil.rmtree(cli11_dir)
             
             url = f"https://github.com/CLIUtils/CLI11/archive/refs/tags/v{CLI11_VERSION}.zip"
             archive = download_file(url, downloads_dir, f"CLI11-{CLI11_VERSION}.zip",
-                                   proxy=args.proxy)
-            extract_archive(archive, cli11_dir)
-            print("  [OK] CLI11")
-        print()
+                                   proxy=args.proxy, verbose=verbose)
+            extract_archive(archive, cli11_dir, verbose=verbose)
+            print("  [OK] CLI11", flush=True)
+        print(flush=True)
 
     # 5. DirectX-Headers (for D3D12 development on Windows)
     if not args.skip_directx_headers:
-        print("=" * 50)
-        print("[5/7] DirectX-Headers")
-        print("=" * 50)
+        print("=" * 50, flush=True)
+        print("[5/7] DirectX-Headers", flush=True)
+        print("=" * 50, flush=True)
 
         dxheaders_dir = deps_dir / "DirectX-Headers"
 
         if dxheaders_dir.exists() and not overwrite:
-            print("  DirectX-Headers already exists, skipping")
+            print("  DirectX-Headers already exists, skipping", flush=True)
         else:
             if dxheaders_dir.exists():
                 shutil.rmtree(dxheaders_dir)
 
-            git_clone(DIRECTX_HEADERS_REPO, dxheaders_dir, depth=1)
-            print("  [OK] DirectX-Headers")
-        print()
+            git_clone(DIRECTX_HEADERS_REPO, dxheaders_dir, depth=1, verbose=verbose)
+            print("  [OK] DirectX-Headers", flush=True)
+        print(flush=True)
     else:
-        print("[5/7] DirectX-Headers - Skipped (--skip-directx-headers)")
-        print()
+        print("[5/7] DirectX-Headers - Skipped (--skip-directx-headers)", flush=True)
+        print(flush=True)
 
     # 6. ANGLE (can be skipped with --skip-angle if already downloaded)
     if not args.skip_angle:
-        print("=" * 50)
-        print("[6/7] ANGLE")
-        print("=" * 50)
+        print("=" * 50, flush=True)
+        print("[6/7] ANGLE", flush=True)
+        print("=" * 50, flush=True)
         
         angle_dir = deps_dir / "angle"
         depot_dir = deps_dir / "depot_tools"
@@ -615,22 +631,22 @@ def sync_deps(args):
         # Ensure depot_tools exists (needed for gclient)
         if not depot_dir.exists():
             depot_url = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
-            git_clone(depot_url, depot_dir)
+            git_clone(depot_url, depot_dir, verbose=verbose)
         else:
-            print(f"  depot_tools already exists: {depot_dir}")
+            print(f"  depot_tools already exists: {depot_dir}", flush=True)
         
         if angle_dir.exists() and not overwrite:
-            print("  ANGLE already exists, skipping")
+            print("  ANGLE already exists, skipping", flush=True)
         else:
             # ANGLE needs full clone for gclient sync to work properly
             # depth=0 means full clone
-            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT, depth=0)
+            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT, depth=0, verbose=verbose)
             
             # Setup gclient configuration
             setup_angle_gclient(angle_dir, ANGLE_COMMIT)
             
             # Run gclient sync to get ANGLE dependencies
-            print("  Running gclient sync for ANGLE dependencies...")
+            print("  Running gclient sync for ANGLE dependencies...", flush=True)
             env = os.environ.copy()
             env["PATH"] = str(depot_dir) + os.pathsep + env.get("PATH", "")
             env["DEPOT_TOOLS_UPDATE"] = "0"
@@ -647,21 +663,21 @@ def sync_deps(args):
                 try:
                     # Run gclient sync from deps_dir (where .gclient is located)
                     run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
-                           cwd=str(deps_dir), env=env, check=False)
+                           cwd=str(deps_dir), env=env, check=False, verbose=verbose)
                 except Exception as e:
-                    print(f"  Warning: gclient sync error: {e}")
+                    print(f"  Warning: gclient sync error: {e}", flush=True)
             
-            print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
-        print()
+            print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})", flush=True)
+        print(flush=True)
     else:
-        print("[6/7] ANGLE - Skipped (--skip-angle)")
-        print()
+        print("[6/7] ANGLE - Skipped (--skip-angle)", flush=True)
+        print(flush=True)
 
     # 7. Skia
     if not args.skip_skia:
-        print("=" * 50)
-        print("[7/7] Skia")
-        print("=" * 50)
+        print("=" * 50, flush=True)
+        print("[7/7] Skia", flush=True)
+        print("=" * 50, flush=True)
         
         skia_dir = deps_dir / "skia"
         depot_dir = deps_dir / "depot_tools"
@@ -669,52 +685,52 @@ def sync_deps(args):
         # Clone depot_tools
         if not depot_dir.exists():
             depot_url = "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
-            git_clone(depot_url, depot_dir)
+            git_clone(depot_url, depot_dir, verbose=verbose)
         else:
-            print(f"  depot_tools already exists: {depot_dir}")
+            print(f"  depot_tools already exists: {depot_dir}", flush=True)
         
         # Clone Skia
         if skia_dir.exists() and not overwrite:
-            print("  Skia already exists, skipping clone")
+            print("  Skia already exists, skipping clone", flush=True)
         else:
             if skia_dir.exists():
                 shutil.rmtree(skia_dir)
             
             skia_url = "https://skia.googlesource.com/skia.git"
-            git_clone(skia_url, skia_dir, branch="chrome/m147")
+            git_clone(skia_url, skia_dir, branch="chrome/m147", verbose=verbose)
         
         # Sync dependencies
-        print("  Syncing Skia dependencies...")
+        print("  Syncing Skia dependencies...", flush=True)
         sync_script = skia_dir / "tools" / "git-sync-deps"
         if sync_script.exists():
             try:
-                run_cmd([sys.executable, str(sync_script)], cwd=str(skia_dir), check=False)
+                run_cmd([sys.executable, str(sync_script)], cwd=str(skia_dir), check=False, verbose=verbose)
             except Exception as e:
-                print(f"  Warning: Skia deps sync error: {e}")
+                print(f"  Warning: Skia deps sync error: {e}", flush=True)
         else:
-            print("  Warning: git-sync-deps not found")
+            print("  Warning: git-sync-deps not found", flush=True)
         
-        print("  [OK] Skia")
-        print()
+        print("  [OK] Skia", flush=True)
+        print(flush=True)
     
     # Cleanup downloads
     if not args.keep_downloads:
-        print("Cleaning up downloads...")
+        print("Cleaning up downloads...", flush=True)
         if downloads_dir.exists():
             shutil.rmtree(downloads_dir)
-            print("  [OK] Downloads cleaned")
-        print()
+            print("  [OK] Downloads cleaned", flush=True)
+        print(flush=True)
     
     # Summary
-    print("=" * 50)
-    print("Dependency Sync Complete")
-    print("=" * 50)
-    print()
-    print("Dependencies downloaded:")
+    print("=" * 50, flush=True)
+    print("Dependency Sync Complete", flush=True)
+    print("=" * 50, flush=True)
+    print(flush=True)
+    print("Dependencies downloaded:", flush=True)
     for name in ["SDL3", "vk-bootstrap", "spdlog", "CLI11", "DirectX-Headers", "angle", "skia", "depot_tools"]:
         if (deps_dir / name).exists():
-            print(f"  [OK] {name}")
-    print()
+            print(f"  [OK] {name}", flush=True)
+    print(flush=True)
     return 0
 
 def main():
@@ -734,12 +750,15 @@ def main():
     parser.add_argument("--proxy", type=str, help="Proxy URL")
     parser.add_argument("--keep-downloads", action="store_true", help="Keep downloaded archives")
     
+    # Verbose option
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    
     args = parser.parse_args()
     
     try:
         return sync_deps(args)
     except Exception as e:
-        print(f"\nERROR: {e}")
+        print(f"\nERROR: {e}", flush=True)
         return 1
 
 if __name__ == "__main__":
