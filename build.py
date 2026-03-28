@@ -53,7 +53,23 @@ def find_tool(name: str, extra_paths: list = None) -> str:
     return None
 
 def find_llvm() -> tuple:
-    """Find LLVM installation"""
+    """Find LLVM installation, preferring clang-cl on Windows"""
+    # On Windows, prefer clang-cl for MSVC compatibility
+    if platform.system() == "Windows":
+        clang_cl = find_tool("clang-cl")
+        if clang_cl:
+            clang_path = Path(clang_cl)
+            llvm_path = clang_path.parent.parent
+            return str(llvm_path), clang_cl, clang_cl
+        
+        # Fallback: check standard LLVM installation paths
+        for base in [r"C:\Program Files\LLVM", r"C:\LLVM"]:
+            llvm_path = Path(base)
+            clang_cl_path = llvm_path / "bin" / "clang-cl.exe"
+            if clang_cl_path.exists():
+                return str(llvm_path), str(clang_cl_path), str(clang_cl_path)
+    
+    # Non-Windows or clang-cl not found: use regular clang
     clang = find_tool("clang")
     if clang:
         clang_path = Path(clang)
@@ -174,7 +190,8 @@ def remove_readonly(func, path, _):
 # ========================================
 
 def build_sdl3(source_dir: Path, build_type: str, 
-               clang: str, clang_pp: str, sccache: str = None) -> bool:
+               clang: str, clang_pp: str, sccache: str = None,
+               verbose: bool = False) -> bool:
     """Build SDL3 with CMake -> deps/SDL3/out/{Debug,Release}/"""
     print("\n[SDL3]")
     
@@ -214,7 +231,11 @@ def build_sdl3(source_dir: Path, build_type: str,
     run_cmd(cmd)
     
     print("  Building...")
-    run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
+    build_cmd = ["cmake", "--build", str(build_dir), "--config", build_type]
+    if verbose:
+        build_cmd.append("--")  # Pass flags to ninja
+        build_cmd.append("-v")  # Verbose ninja output
+    run_cmd(build_cmd)
     
     print("  Installing...")
     run_cmd(["cmake", "--install", str(build_dir), "--config", build_type])
@@ -223,7 +244,8 @@ def build_sdl3(source_dir: Path, build_type: str,
     return True
 
 def build_vkbootstrap(source_dir: Path, build_type: str,
-                      clang: str, clang_pp: str, sccache: str = None) -> bool:
+                      clang: str, clang_pp: str, sccache: str = None,
+                      verbose: bool = False) -> bool:
     """Build vk-bootstrap with CMake -> deps/vk-bootstrap/out/{Debug,Release}/"""
     print("\n[vk-bootstrap]")
     
@@ -256,7 +278,11 @@ def build_vkbootstrap(source_dir: Path, build_type: str,
     run_cmd(cmd)
     
     print("  Building...")
-    run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
+    build_cmd = ["cmake", "--build", str(build_dir), "--config", build_type]
+    if verbose:
+        build_cmd.append("--")
+        build_cmd.append("-v")
+    run_cmd(build_cmd)
     
     print("  Installing...")
     run_cmd(["cmake", "--install", str(build_dir), "--config", build_type])
@@ -266,7 +292,7 @@ def build_vkbootstrap(source_dir: Path, build_type: str,
 
 def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
                 depot_tools: Path, target_cpu: str, sccache: str = None,
-                skip_angle: bool = False) -> bool:
+                skip_angle: bool = False, verbose: bool = False) -> bool:
     """Build ANGLE with GN + Ninja -> deps/angle/out/{Debug,Release}/"""
     print("\n[ANGLE]")
     
@@ -394,13 +420,17 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     run_cmd([gn, "gen", out_dir, f"--args={gn_args_str}"], cwd=str(angle_dir), env=env)
     
     print("  Building...")
-    run_cmd([ninja, "-C", out_dir, "libEGL", "libGLESv2"], cwd=str(angle_dir), env=env)
+    ninja_cmd = [ninja, "-C", out_dir, "libEGL", "libGLESv2"]
+    if verbose:
+        ninja_cmd.append("-v")
+    run_cmd(ninja_cmd, cwd=str(angle_dir), env=env)
     
     print(f"  Output: {angle_dir / out_dir}")
     return True
 
 def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
-               depot_tools: Path, target_cpu: str, sccache: str = None) -> bool:
+               depot_tools: Path, target_cpu: str, sccache: str = None,
+               verbose: bool = False) -> bool:
     """Build Skia with GN + Ninja -> deps/skia/out/{Debug,Release}/"""
     print("\n[Skia]")
     
@@ -537,7 +567,10 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
     run_cmd([gn, "gen", out_dir, f"--args={gn_args_str}"], cwd=str(skia_dir), env=env)
     
     print("  Building...")
-    run_cmd([ninja, "-C", out_dir], cwd=str(skia_dir), env=env)
+    ninja_cmd = [ninja, "-C", out_dir]
+    if verbose:
+        ninja_cmd.append("-v")
+    run_cmd(ninja_cmd, cwd=str(skia_dir), env=env)
     
     print(f"  Output: {skia_dir / out_dir}")
     return True
@@ -654,6 +687,8 @@ def build_main_project(script_dir: Path, build_type: str,
     # Enable verbose CMake dependency output
     if verbose:
         cmd.append("-DVERBOSE_DEPS=ON")
+    else:
+        cmd.append("-DVERBOSE_DEPS=OFF")
     
     # Print CMake variables only in verbose mode
     if verbose:
@@ -671,7 +706,11 @@ def build_main_project(script_dir: Path, build_type: str,
     run_cmd(cmd)
     
     print("  Building...")
-    run_cmd(["cmake", "--build", str(build_dir), "--config", build_type])
+    build_cmd = ["cmake", "--build", str(build_dir), "--config", build_type]
+    if verbose:
+        build_cmd.append("--")
+        build_cmd.append("-v")
+    run_cmd(build_cmd)
     
     # Copy ANGLE DLLs to build directory
     if platform.system() == "Windows":
@@ -774,6 +813,12 @@ Directory Structure:
         return 1
     print(f"  LLVM: {llvm_path}")
     
+    # Show compiler type
+    if platform.system() == "Windows" and "clang-cl" in clang:
+        print(f"  Compiler: clang-cl (MSVC-compatible)")
+    else:
+        print(f"  Compiler: {clang}")
+    
     ninja = find_ninja(depot_tools)
     if not ninja:
         print("  ERROR: Ninja not found")
@@ -797,20 +842,23 @@ Directory Structure:
         print("=" * 60)
         
         if not args.skip_sdl:
-            build_sdl3(deps_dir / "SDL3", args.build_type, clang, clang_pp, sccache)
+            build_sdl3(deps_dir / "SDL3", args.build_type, clang, clang_pp, sccache,
+                      verbose=args.verbose)
         
         if not args.skip_vkbootstrap:
-            build_vkbootstrap(deps_dir / "vk-bootstrap", args.build_type, clang, clang_pp, sccache)
+            build_vkbootstrap(deps_dir / "vk-bootstrap", args.build_type, clang, clang_pp, sccache,
+                             verbose=args.verbose)
         
         # Build ANGLE (can be skipped with --skip-angle)
         build_angle(
             deps_dir / "angle", args.build_type, llvm_path, depot_tools,
-            args.target_cpu, sccache, skip_angle=args.skip_angle
+            args.target_cpu, sccache, skip_angle=args.skip_angle,
+            verbose=args.verbose
         )
         
         if not args.skip_skia:
             build_skia(deps_dir / "skia", args.build_type, llvm_path, depot_tools, 
-                      args.target_cpu, sccache)
+                      args.target_cpu, sccache, verbose=args.verbose)
     
     # Build main project
     if not args.skip_main:
