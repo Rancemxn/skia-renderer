@@ -1,6 +1,12 @@
-name: Release
+name: Version & Release
 
 on:
+  push:
+    branches:
+      - develop
+    paths-ignore:
+      - 'VERSION'
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       bump_major:
@@ -23,7 +29,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  version-and-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -59,20 +65,25 @@ jobs:
           CURRENT_MAJOR_MINOR=${{ steps.current_version.outputs.major_minor }}
           CURRENT_BUILD=${{ steps.current_version.outputs.build_number }}
           
-          if [ "${{ inputs.bump_major }}" = "true" ]; then
-            # Bump major: MAJOR_MINOR + 10, BUILD = 0
-            # Example: 20 (2.0) -> 30 (3.0)
-            NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 10))
-            NEW_BUILD=0
-          elif [ "${{ inputs.bump_minor }}" = "true" ]; then
-            # Bump minor: MAJOR_MINOR + 1, BUILD = 0
-            # Example: 20 (2.0) -> 21 (2.1)
-            NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 1))
-            NEW_BUILD=0
+          # Always increment BUILD_NUMBER
+          NEW_BUILD=$((CURRENT_BUILD + 1))
+          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.bump_major }}" = "true" ]; then
+              # Bump major: MAJOR_MINOR + 10, BUILD = 0
+              NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 10))
+              NEW_BUILD=0
+            elif [ "${{ inputs.bump_minor }}" = "true" ]; then
+              # Bump minor: MAJOR_MINOR + 1, BUILD = 0
+              NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 1))
+              NEW_BUILD=0
+            else
+              # Default release: just use incremented BUILD_NUMBER
+              NEW_MAJOR_MINOR=$CURRENT_MAJOR_MINOR
+            fi
           else
-            # Default: bump build number only
+            # Push trigger: only bump BUILD_NUMBER
             NEW_MAJOR_MINOR=$CURRENT_MAJOR_MINOR
-            NEW_BUILD=$((CURRENT_BUILD + 1))
           fi
           
           # Parse final version
@@ -85,6 +96,7 @@ jobs:
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "new_version=${NEW_MAJOR}.${NEW_MINOR}.${NEW_BUILD}" >> $GITHUB_OUTPUT
           echo "New version: $NEW_TAG (MAJOR_MINOR=$NEW_MAJOR_MINOR, BUILD=$NEW_BUILD)"
+          echo "is_release=${{ github.event_name == 'workflow_dispatch' }}" >> $GITHUB_OUTPUT
 
       - name: Update VERSION and commit on develop
         run: |
@@ -93,7 +105,9 @@ jobs:
           git commit -m "chore: bump version to ${{ steps.new_version.outputs.new_tag }}"
           git push origin develop
 
+      # Release steps (only for workflow_dispatch)
       - name: Merge develop into main
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git fetch origin main:main
           git checkout main
@@ -101,6 +115,7 @@ jobs:
           git push origin main
 
       - name: Create tag
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git tag -a ${{ steps.new_version.outputs.new_tag }} -m "Release ${{ steps.new_version.outputs.new_tag }}
 
@@ -109,12 +124,14 @@ jobs:
           git push origin ${{ steps.new_version.outputs.new_tag }}
 
       - name: Sync develop branch
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git checkout develop
           git merge main -m "chore: sync with main after release ${{ steps.new_version.outputs.new_tag }}"
           git push origin develop
 
       - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -138,12 +155,14 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## ${{ github.event_name == 'workflow_dispatch' && 'Release Summary' || 'Version Bump' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Previous Version | ${{ steps.current_version.outputs.current_version }} |" >> $GITHUB_STEP_SUMMARY
           echo "| New Version | ${{ steps.new_version.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
           echo "| VERSION File | ${{ steps.new_version.outputs.new_major_minor }} ${{ steps.new_version.outputs.new_build }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tag | ${{ steps.new_version.outputs.new_tag }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Draft | ${{ inputs.draft }} |" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "| Tag | ${{ steps.new_version.outputs.new_tag }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Draft | ${{ inputs.draft }} |" >> $GITHUB_STEP_SUMMARY
+          fi
