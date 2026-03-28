@@ -68,6 +68,16 @@ public:
     void resize(int width, int height);
 
     /**
+     * @brief Transition back buffer to render target state
+     */
+    void transitionToRenderTarget();
+
+    /**
+     * @brief Transition back buffer to present state
+     */
+    void transitionToPresent();
+
+    /**
      * @brief Get current back buffer index
      */
     UINT getCurrentBackBufferIndex() const { return m_frameIndex; }
@@ -129,6 +139,7 @@ private:
     bool createDescriptorHeaps();
     bool createRenderTargetViews();
     void cleanupRenderTargetViews();
+    bool createCommandObjects();
 
     SDL_Window* m_window = nullptr;
     bool m_initialized = false;
@@ -140,6 +151,10 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Device> m_device;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_commandQueue;
     Microsoft::WRL::ComPtr<IDXGISwapChain3> m_swapChain;
+
+    // Command objects for resource barriers
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_commandAllocator;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
     // Descriptor heaps
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap;

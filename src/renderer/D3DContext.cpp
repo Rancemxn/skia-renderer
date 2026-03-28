@@ -8,7 +8,6 @@
 #include <directx/d3d12.h>
 #include <directx/d3dx12.h>
 #include <dxgi1_6.h>
-#include <directx/d3dx12.h>
 #include <string>
 
 namespace skia_renderer {
@@ -55,6 +54,11 @@ bool D3DContext::initialize(SDL_Window* window, int width, int height) {
 
     if (!createRenderTargetViews()) {
         LOG_ERROR("Failed to create render target views");
+        return false;
+    }
+
+    if (!createCommandObjects()) {
+        LOG_ERROR("Failed to create command objects");
         return false;
     }
 
@@ -385,6 +389,88 @@ std::string D3DContext::getAdapterDescription() const {
     WideCharToMultiByte(CP_ACP, 0, desc.Description, -1, description, sizeof(description), nullptr, nullptr);
     
     return std::string(description);
+}
+
+bool D3DContext::createCommandObjects() {
+    // Create command allocator
+    HRESULT hr = m_device->CreateCommandAllocator(
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        IID_PPV_ARGS(&m_commandAllocator)
+    );
+    if (FAILED(hr)) {
+        LOG_ERROR("Failed to create command allocator: 0x{:08X}", hr);
+        return false;
+    }
+
+    // Create command list
+    hr = m_device->CreateCommandList(
+        0,  // node mask
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        m_commandAllocator.Get(),
+        nullptr,  // initial pipeline state
+        IID_PPV_ARGS(&m_commandList)
+    );
+    if (FAILED(hr)) {
+        LOG_ERROR("Failed to create command list: 0x{:08X}", hr);
+        return false;
+    }
+
+    // Close command list (it's created in open state)
+    m_commandList->Close();
+
+    return true;
+}
+
+void D3DContext::transitionToRenderTarget() {
+    if (!m_commandList || !m_commandAllocator || !m_renderTargets[m_frameIndex]) {
+        return;
+    }
+
+    // Reset command allocator and list
+    m_commandAllocator->Reset();
+    m_commandList->Reset(m_commandAllocator.Get(), nullptr);
+
+    // Transition back buffer from PRESENT to RENDER_TARGET
+    CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_renderTargets[m_frameIndex].Get(),
+        D3D12_RESOURCE_STATE_PRESENT,
+        D3D12_RESOURCE_STATE_RENDER_TARGET
+    );
+    m_commandList->ResourceBarrier(1, &barrier);
+
+    // Close and execute
+    m_commandList->Close();
+    ID3D12CommandList* commandLists[] = { m_commandList.Get() };
+    m_commandQueue->ExecuteCommandLists(1, commandLists);
+
+    // Wait for completion
+    waitForGPU();
+}
+
+void D3DContext::transitionToPresent() {
+    if (!m_commandList || !m_commandAllocator || !m_renderTargets[m_frameIndex]) {
+        return;
+    }
+
+    // Reset command allocator and list
+    m_commandAllocator->Reset();
+    m_commandList->Reset(m_commandAllocator.Get(), nullptr);
+
+    // Transition back buffer from RENDER_TARGET to PRESENT
+    CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_renderTargets[m_frameIndex].Get(),
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        D3D12_RESOURCE_STATE_PRESENT
+    );
+    m_commandList->ResourceBarrier(1, &barrier);
+
+    // Close and execute
+    m_commandList->Close();
+    ID3D12CommandList* commandLists[] = { m_commandList.Get() };
+    m_commandQueue->ExecuteCommandLists(1, commandLists);
+
+    // Wait for completion
+    waitForGPU();
 }
 
 } // namespace skia_renderer

@@ -122,13 +122,17 @@ bool D3DRenderer::createSurface() {
 
     LOG_INFO("  Creating Skia surface ({}x{})...", m_width, m_height);
 
+    // Transition back buffer to RENDER_TARGET state for Skia
+    m_d3dContext->transitionToRenderTarget();
+
     // Setup texture resource info
     m_impl->textureInfo = GrD3DTextureResourceInfo();
     
     // AddRef the back buffer since gr_cp will Release it
     backBuffer->AddRef();
     m_impl->textureInfo.fResource = gr_cp<ID3D12Resource>(backBuffer);
-    m_impl->textureInfo.fResourceState = D3D12_RESOURCE_STATE_PRESENT;
+    // Resource is now in RENDER_TARGET state after transition
+    m_impl->textureInfo.fResourceState = D3D12_RESOURCE_STATE_RENDER_TARGET;
     m_impl->textureInfo.fFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     m_impl->textureInfo.fSampleCount = 1;
     m_impl->textureInfo.fLevelCount = 1;
@@ -168,6 +172,10 @@ bool D3DRenderer::createSurface() {
     }
 
     LOG_INFO("  Canvas obtained successfully");
+    
+    // Update back buffer index tracking
+    m_currentBackBufferIndex = m_d3dContext->getCurrentBackBufferIndex();
+    
     return true;
 }
 
@@ -222,6 +230,18 @@ bool D3DRenderer::beginFrame() {
         return false;
     }
 
+    // Check if back buffer index changed (after present)
+    UINT currentIndex = m_d3dContext->getCurrentBackBufferIndex();
+    if (currentIndex != m_currentBackBufferIndex) {
+        // Back buffer changed, need to recreate surface
+        m_currentBackBufferIndex = currentIndex;
+        destroySurface();
+        if (!createSurface()) {
+            LOG_ERROR("Failed to recreate surface for new back buffer");
+            return false;
+        }
+    }
+
     // Wait for previous frame to complete
     m_d3dContext->waitForGPU();
 
@@ -235,6 +255,9 @@ void D3DRenderer::endFrame() {
 
     // Flush and submit Skia rendering
     m_impl->grContext->flushAndSubmit();
+
+    // Transition back buffer to PRESENT state
+    m_d3dContext->transitionToPresent();
 
     // Present
     m_d3dContext->present();

@@ -4,6 +4,7 @@
 
 #include "IRenderer.h"
 #include <memory>
+#include <cstdint>
 
 namespace skia_renderer {
 
@@ -47,6 +48,7 @@ private:
     int m_height = 0;
     bool m_initialized = false;
     float m_fps = 0.0f;
+    uint32_t m_currentBackBufferIndex = 0;
 };
 
 #else
