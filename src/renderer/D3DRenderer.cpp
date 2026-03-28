@@ -120,8 +120,6 @@ bool D3DRenderer::createSurface() {
         return false;
     }
 
-    LOG_INFO("  Creating Skia surface ({}x{})...", m_width, m_height);
-
     // Transition back buffer to RENDER_TARGET state for Skia
     m_d3dContext->transitionToRenderTarget();
 
@@ -162,16 +160,12 @@ bool D3DRenderer::createSurface() {
         return false;
     }
 
-    LOG_INFO("  Skia surface created successfully");
-
     // Verify we can get a canvas
     SkCanvas* canvas = m_impl->surface->getCanvas();
     if (!canvas) {
         LOG_ERROR("  Failed to get canvas from surface");
         return false;
     }
-
-    LOG_INFO("  Canvas obtained successfully");
     
     // Update back buffer index tracking
     m_currentBackBufferIndex = m_d3dContext->getCurrentBackBufferIndex();
