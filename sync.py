@@ -45,16 +45,35 @@ def find_tool(name: str, extra_paths: list = None) -> str:
     return None
 
 def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False) -> subprocess.CompletedProcess:
-    """Run a command"""
+    """Run a command with real-time output streaming"""
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
     
     print(f"  Running: {' '.join(str(c) for c in cmd)}", flush=True)
-    result = subprocess.run(cmd, cwd=cwd, env=merged_env)
-    if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, cmd)
-    return result
+    
+    # Use Popen for real-time output streaming
+    process = subprocess.Popen(
+        cmd, 
+        cwd=cwd, 
+        env=merged_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,  # Line buffered
+        universal_newlines=True
+    )
+    
+    # Stream output in real-time
+    for line in process.stdout:
+        print(line, end='', flush=True)
+    
+    process.wait()
+    
+    if check and process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, cmd)
+    
+    return subprocess.CompletedProcess(cmd, process.returncode, None, None)
 
 # ========================================
 # Download Functions
