@@ -829,12 +829,19 @@ endif()
 # ========================================
 # Compiler Flags
 # ========================================
+# Detect clang-cl (Clang with MSVC frontend)
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(USING_CLANG_WIN TRUE)
-    message(STATUS "Using Clang on Windows")
+    if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC" OR
+       CMAKE_CXX_COMPILER MATCHES "clang-cl")
+        set(USING_CLANG_CL TRUE)
+        message(STATUS "Using clang-cl on Windows (MSVC-compatible)")
+    else()
+        set(USING_CLANG_GNU TRUE)
+        message(STATUS "Using Clang on Windows (GNU-compatible)")
+    endif()
 endif()
 
-if(MSVC)
+if(MSVC OR USING_CLANG_CL)
     target_compile_options(${PROJECT_NAME} PRIVATE
         /W4 /utf-8 /GR /EHsc
         $<$<CONFIG:Release>:/O2 /GL>
@@ -843,7 +850,7 @@ if(MSVC)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
     endif()
-elseif(USING_CLANG_WIN)
+elseif(USING_CLANG_GNU)
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wpedantic -frtti -fexceptions
         # Disable warnings from Skia headers (GNU extensions)

@@ -53,7 +53,23 @@ def find_tool(name: str, extra_paths: list = None) -> str:
     return None
 
 def find_llvm() -> tuple:
-    """Find LLVM installation"""
+    """Find LLVM installation, preferring clang-cl on Windows"""
+    # On Windows, prefer clang-cl for MSVC compatibility
+    if platform.system() == "Windows":
+        clang_cl = find_tool("clang-cl")
+        if clang_cl:
+            clang_path = Path(clang_cl)
+            llvm_path = clang_path.parent.parent
+            return str(llvm_path), clang_cl, clang_cl
+        
+        # Fallback: check standard LLVM installation paths
+        for base in [r"C:\Program Files\LLVM", r"C:\LLVM"]:
+            llvm_path = Path(base)
+            clang_cl_path = llvm_path / "bin" / "clang-cl.exe"
+            if clang_cl_path.exists():
+                return str(llvm_path), str(clang_cl_path), str(clang_cl_path)
+    
+    # Non-Windows or clang-cl not found: use regular clang
     clang = find_tool("clang")
     if clang:
         clang_path = Path(clang)
@@ -773,6 +789,12 @@ Directory Structure:
         print("  ERROR: LLVM/Clang not found")
         return 1
     print(f"  LLVM: {llvm_path}")
+    
+    # Show compiler type
+    if platform.system() == "Windows" and "clang-cl" in clang:
+        print(f"  Compiler: clang-cl (MSVC-compatible)")
+    else:
+        print(f"  Compiler: {clang}")
     
     ninja = find_ninja(depot_tools)
     if not ninja:
