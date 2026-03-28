@@ -430,26 +430,6 @@ def git_clone_at_commit(url: str, target_dir: Path, commit: str, depth: int = 1,
     
     return target_dir
 
-def setup_angle_gclient(angle_dir: Path, commit: str) -> None:
-    """Create .gclient file for ANGLE and run gclient sync"""
-    gclient_file = angle_dir.parent / ".gclient"
-    
-    gclient_content = f'''solutions = [
-  {{
-    "name": "angle",
-    "url": "https://github.com/google/angle.git@{commit}",
-    "deps_file": "DEPS",
-    "managed": False,
-    "custom_deps": {{}},
-  }},
-]
-'''
-    
-    with open(gclient_file, 'w') as f:
-        f.write(gclient_content)
-    
-    print(f"  Created .gclient config", flush=True)
-
 # ========================================
 # Main
 # ========================================
@@ -638,15 +618,12 @@ def sync_deps(args):
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping", flush=True)
         else:
-            # ANGLE needs full clone for gclient sync to work properly
-            # depth=0 means full clone
-            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT, depth=0, verbose=verbose)
+            # Remove existing ANGLE directory
+            if angle_dir.exists():
+                shutil.rmtree(angle_dir)
+            angle_dir.mkdir(parents=True, exist_ok=True)
             
-            # Setup gclient configuration
-            setup_angle_gclient(angle_dir, ANGLE_COMMIT)
-            
-            # Run gclient sync to get ANGLE dependencies
-            print("  Running gclient sync for ANGLE dependencies...", flush=True)
+            # Setup environment
             env = os.environ.copy()
             env["PATH"] = str(depot_dir) + os.pathsep + env.get("PATH", "")
             env["DEPOT_TOOLS_UPDATE"] = "0"
@@ -659,13 +636,21 @@ def sync_deps(args):
             else:
                 gclient = depot_dir / "gclient"
             
-            if gclient.exists():
-                try:
-                    # Run gclient sync from deps_dir (where .gclient is located)
-                    run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
-                           cwd=str(deps_dir), env=env, check=False, verbose=verbose)
-                except Exception as e:
-                    print(f"  Warning: gclient sync error: {e}", flush=True)
+            # Configure gclient for ANGLE (let gclient manage the clone)
+            print("  Configuring gclient for ANGLE...", flush=True)
+            gclient_spec = f"solutions = [ {{ 'name': '.', 'url': 'https://chromium.googlesource.com/angle/angle.git@{ANGLE_COMMIT}', 'deps_file': 'DEPS', 'managed': True, 'custom_vars': {{}}, }}, ];"
+            run_cmd([str(gclient), "config", "--spec", gclient_spec],
+                   cwd=str(angle_dir), env=env, verbose=verbose)
+            
+            # Run gclient sync (this will clone ANGLE + all dependencies)
+            print("  Running gclient sync for ANGLE...", flush=True)
+            run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
+                   cwd=str(angle_dir), env=env, check=False, verbose=verbose)
+            
+            # Run gclient runhooks
+            print("  Running gclient runhooks...", flush=True)
+            run_cmd([str(gclient), "runhooks"],
+                   cwd=str(angle_dir), env=env, check=False, verbose=verbose)
             
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})", flush=True)
         print(flush=True)
