@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -91,13 +91,16 @@ jobs:
           echo "New version: $NEW_VERSION"
           echo "New tag: $NEW_TAG"
 
-      - name: Update VERSION file
+      - name: Update VERSION and commit on develop
         run: |
           echo "${{ steps.new_version.outputs.new_version }}" > VERSION
           git add VERSION
+          git commit -m "chore: bump version to ${{ steps.new_version.outputs.new_version }}"
+          git push origin develop
 
       - name: Merge develop into main
         run: |
+          git fetch origin main:main
           git checkout main
           git merge develop --no-ff -m "chore: merge develop for release ${{ steps.new_version.outputs.new_tag }}"
           git push origin main
@@ -105,7 +108,7 @@ jobs:
       - name: Create tag
         run: |
           git tag -a ${{ steps.new_version.outputs.new_tag }} -m "Release ${{ steps.new_version.outputs.new_tag }}
-          
+
           Version: ${{ steps.new_version.outputs.new_version }}
           Created: $(date '+%Y-%m-%d %H:%M:%S')"
           git push origin ${{ steps.new_version.outputs.new_tag }}
@@ -128,9 +131,9 @@ jobs:
           gh release create ${{ steps.new_version.outputs.new_tag }} \
             --title "Release ${{ steps.new_version.outputs.new_tag }}" \
             --notes "## Release ${{ steps.new_version.outputs.new_tag }}
-          
+
           **Version Number:** ${{ steps.new_version.outputs.new_version }}
-          
+
           **Changes since last release:**
           \`\`\`
           $(git log $(git describe --tags --abbrev=0 ${{ steps.new_version.outputs.new_tag }}^)..${{ steps.new_version.outputs.new_tag }} --oneline 2>/dev/null || echo "Initial release")
