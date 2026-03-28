@@ -1,0 +1,163 @@
+name: Build Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+
+permissions:
+  contents: read
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ----------------------------------------
+      # Setup Build Tools
+      # ----------------------------------------
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "18"
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ----------------------------------------
+      # Verify Environment
+      # ----------------------------------------
+      - name: Verify build environment
+        run: |
+          Write-Host "=== Build Environment ==="
+          Write-Host ""
+          
+          Write-Host "Clang-cl:"
+          clang-cl --version
+          Write-Host ""
+          
+          Write-Host "CMake:"
+          cmake --version
+          Write-Host ""
+          
+          Write-Host "Ninja:"
+          ninja --version
+          Write-Host ""
+          
+          Write-Host "Python:"
+          python --version
+          Write-Host ""
+          
+          Write-Host "Vulkan SDK: $env:VULKAN_SDK"
+          Write-Host ""
+
+      # ----------------------------------------
+      # Sync Dependencies
+      # ----------------------------------------
+      - name: Sync dependencies
+        run: python sync.py
+        timeout-minutes: 30
+
+      # ----------------------------------------
+      # Build
+      # ----------------------------------------
+      - name: Build ${{ inputs.build_type }}
+        run: python build.py --build-type ${{ inputs.build_type }}
+        timeout-minutes: 120
+
+      # ----------------------------------------
+      # Show sccache stats
+      # ----------------------------------------
+      - name: Show sccache stats
+        run: sccache --show-stats
+
+      # ----------------------------------------
+      # Package Artifacts
+      # ----------------------------------------
+      - name: Package artifact
+        id: package
+        run: |
+          $version = Get-Content VERSION
+          $buildType = "${{ inputs.build_type }}"
+          $zipName = "skia-renderer-v$version-windows-x64-$buildType.zip"
+          
+          # Create package directory
+          New-Item -ItemType Directory -Force -Path package
+          
+          # Copy executable
+          Copy-Item build/$buildType/skia-renderer.exe package/
+          
+          # Copy DLLs for Release build
+          if ($buildType -eq "Release") {
+            Copy-Item deps/SDL3/out/Release/SDL3.dll package/
+            Copy-Item deps/angle/out/Release/libEGL.dll package/
+            Copy-Item deps/angle/out/Release/libGLESv2.dll package/
+          } else {
+            Copy-Item deps/SDL3/out/Debug/SDL3.dll package/
+            Copy-Item deps/angle/out/Debug/libEGL.dll package/
+            Copy-Item deps/angle/out/Debug/libGLESv2.dll package/
+          }
+          
+          # Create zip
+          Compress-Archive -Path package/* -DestinationPath $zipName
+          
+          # Calculate hash
+          $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
+          
+          # Get file size
+          $size = (Get-Item $zipName).Length / 1MB
+          
+          echo "artifact_name=$zipName" >> $env:GITHUB_OUTPUT
+          echo "artifact_hash=$hash" >> $env:GITHUB_OUTPUT
+          echo "artifact_size=$([math]::Round($size, 2))" >> $env:GITHUB_OUTPUT
+          
+          Write-Host "Package created: $zipName"
+          Write-Host "Size: $([math]::Round($size, 2)) MB"
+          Write-Host "SHA256: $hash"
+
+      # ----------------------------------------
+      # Upload Artifact
+      # ----------------------------------------
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ inputs.build_type }}
+          path: ${{ steps.package.outputs.artifact_name }}
+          retention-days: 7
+
+      # ----------------------------------------
+      # Summary
+      # ----------------------------------------
+      - name: Summary
+        run: |
+          echo "### Build Test Summary" >> $env:GITHUB_STEP_SUMMARY
+          echo "" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: `${{ inputs.build_type }}`" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: `${{ steps.package.outputs.artifact_name }}`" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Size**: `${{ steps.package.outputs.artifact_size }} MB`" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **SHA256**: `${{ steps.package.outputs.artifact_hash }}`" >> $env:GITHUB_STEP_SUMMARY

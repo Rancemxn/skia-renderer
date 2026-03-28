@@ -25,12 +25,22 @@ on:
 permissions:
   contents: write
 
+env:
+  SCCACHE_GHA_ENABLED: "true"
+
 jobs:
-  version-and-release:
+  # ========================================
+  # Job 1: Version Management
+  # ========================================
+  version-bump:
     runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.new_version.outputs.new_version }}
+      is_release: ${{ steps.new_version.outputs.is_release }}
+    
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -83,10 +93,191 @@ jobs:
           git commit -m "chore: bump version to v${{ steps.new_version.outputs.new_version }}"
           git push origin develop
 
-      - name: Release process
-        if: steps.new_version.outputs.is_release == 'true'
+      - name: Summary
         run: |
-          TAG="v${{ steps.new_version.outputs.new_version }}"
+          echo "### Version Bump Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: \`${{ steps.new_version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          ACTION_TYPE="Build"
+          if [ "${{ steps.new_version.outputs.is_release }}" = "true" ]; then
+            ACTION_TYPE="Release"
+          fi
+          echo "- **Action**: \`${ACTION_TYPE}\`" >> $GITHUB_STEP_SUMMARY
+
+  # ========================================
+  # Job 2: Build Windows Release
+  # ========================================
+  build-windows:
+    needs: version-bump
+    if: needs.version-bump.outputs.is_release == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 180
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ----------------------------------------
+      # Setup Build Tools
+      # ----------------------------------------
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "18"
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ----------------------------------------
+      # Verify Environment
+      # ----------------------------------------
+      - name: Verify build environment
+        run: |
+          clang-cl --version
+          cmake --version
+          ninja --version
+          python --version
+          echo "VULKAN_SDK: $env:VULKAN_SDK"
+
+      # ----------------------------------------
+      # Sync Dependencies
+      # ----------------------------------------
+      - name: Sync dependencies
+        run: python sync.py
+        timeout-minutes: 30
+
+      # ----------------------------------------
+      # Build Release
+      # ----------------------------------------
+      - name: Build Release
+        run: python build.py --build-type Release
+        timeout-minutes: 120
+
+      # ----------------------------------------
+      # Show sccache stats
+      # ----------------------------------------
+      - name: Show sccache stats
+        run: sccache --show-stats
+
+      # ----------------------------------------
+      # Package Artifacts
+      # ----------------------------------------
+      - name: Package Release
+        id: package
+        run: |
+          $version = Get-Content VERSION
+          $zipName = "skia-renderer-v$version-windows-x64.zip"
+          
+          # Create package directory
+          New-Item -ItemType Directory -Force -Path package
+          
+          # Copy executable
+          Copy-Item build/Release/skia-renderer.exe package/
+          
+          # Copy SDL3 DLL
+          Copy-Item deps/SDL3/out/Release/SDL3.dll package/
+          
+          # Copy ANGLE DLLs
+          Copy-Item deps/angle/out/Release/libEGL.dll package/
+          Copy-Item deps/angle/out/Release/libGLESv2.dll package/
+          
+          # Create README
+          @"
+          Skia Renderer v$version
+          ======================
+          
+          A cross-backend rendering engine using Google Skia.
+          
+          Supported backends:
+          - Vulkan (Graphite)
+          - OpenGL (Ganesh)
+          - ANGLE (OpenGL ES)
+          - Direct3D 12 (Windows only)
+          
+          Requirements:
+          - Windows 10/11 64-bit
+          - Vulkan-capable GPU (for Vulkan backend)
+          - OpenGL 3.3+ GPU (for OpenGL backend)
+          
+          Usage:
+          - Double-click skia-renderer.exe to run with default settings
+          - Run 'skia-renderer.exe --help' for command line options
+          - Use '--backend vulkan|opengl|angle|d3d12' to select backend
+          
+          DLLs included:
+          - SDL3.dll: Window and input handling
+          - libEGL.dll, libGLESv2.dll: ANGLE OpenGL ES implementation
+          "@ | Out-File -FilePath package/README.txt -Encoding UTF8
+          
+          # Create zip
+          Compress-Archive -Path package/* -DestinationPath $zipName
+          
+          # Calculate hash
+          $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
+          
+          echo "artifact_name=$zipName" >> $env:GITHUB_OUTPUT
+          echo "artifact_hash=$hash" >> $env:GITHUB_OUTPUT
+          
+          Write-Host "Package created: $zipName"
+          Write-Host "SHA256: $hash"
+
+      # ----------------------------------------
+      # Upload Artifact
+      # ----------------------------------------
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: ${{ steps.package.outputs.artifact_name }}
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          echo "### Build Summary" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: `${{ steps.package.outputs.artifact_name }}`" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **SHA256**: `${{ steps.package.outputs.artifact_hash }}`" >> $env:GITHUB_STEP_SUMMARY
+
+  # ========================================
+  # Job 3: Create Release
+  # ========================================
+  create-release:
+    needs: [version-bump, build-windows]
+    if: needs.version-bump.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: ./artifacts
+
+      - name: Release process
+        run: |
+          TAG="v${{ needs.version-bump.outputs.new_version }}"
           
           rollback() {
             echo "::error::Release process failed. Rolling back..."
@@ -110,20 +301,34 @@ jobs:
           git push origin develop
 
       - name: Create GitHub Release
-        if: steps.new_version.outputs.is_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.new_version.outputs.new_version }}
-          name: Release ${{ steps.new_version.outputs.new_version }}
-          body: "Automatic release for version ${{ steps.new_version.outputs.new_version }}"
+          tag_name: v${{ needs.version-bump.outputs.new_version }}
+          name: Release ${{ needs.version-bump.outputs.new_version }}
+          body: |
+            ## Skia Renderer v${{ needs.version-bump.outputs.new_version }}
+            
+            ### Downloads
+            
+            | Platform | Artifact |
+            |----------|----------|
+            | Windows x64 | `skia-renderer-v${{ needs.version-bump.outputs.new_version }}-windows-x64.zip` |
+            
+            ### Supported Backends
+            - Vulkan (Graphite)
+            - OpenGL (Ganesh)
+            - ANGLE (OpenGL ES)
+            - Direct3D 12 (Windows only)
+            
+            ### Requirements
+            - Windows 10/11 64-bit
+            - Vulkan-capable GPU (for Vulkan backend)
+            - OpenGL 3.3+ GPU (for OpenGL backend)
           prerelease: ${{ inputs.prerelease == 'true' }}
+          files: artifacts/skia-renderer-v${{ needs.version-bump.outputs.new_version }}-windows-x64.zip
 
       - name: Summary
         run: |
-          echo "### Bump Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: \`${{ steps.new_version.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
-          ACTION_TYPE="Build"
-          if [ "${{ steps.new_version.outputs.is_release }}" = "true" ]; then
-            ACTION_TYPE="Release"
-          fi
-          echo "- **Action**: \`${ACTION_TYPE}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: \`v${{ needs.version-bump.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag**: [v${{ needs.version-bump.outputs.new_version }}](https://github.com/${{ github.repository }}/releases/tag/v${{ needs.version-bump.outputs.new_version }})" >> $GITHUB_STEP_SUMMARY
