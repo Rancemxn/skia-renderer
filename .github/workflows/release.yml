@@ -47,49 +47,47 @@ jobs:
       - name: Calculate new version
         id: new_version
         run: |
-          CURRENT=${{ steps.current_version.outputs.version }}
-          
-          if [ "${{ inputs.bump_major }}" = "true" ]; then
-            # Bump major version: find next major version from tags
-            LATEST_MAJOR=$(git tag -l 'v*' | grep -E '^v[0-9]+$' | sed 's/v//' | sort -n | tail -1)
-            if [ -z "$LATEST_MAJOR" ]; then
-              NEW_MAJOR=1
-            else
-              NEW_MAJOR=$((LATEST_MAJOR + 1))
-            fi
-            NEW_VERSION="${NEW_MAJOR}0"
-            NEW_TAG="v${NEW_MAJOR}.0.${NEW_VERSION}"
-          elif [ "${{ inputs.bump_minor }}" = "true" ]; then
-            # Bump minor version
-            LATEST_TAG=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+$' | sort -V | tail -1)
-            if [ -z "$LATEST_TAG" ]; then
-              NEW_TAG="v1.1.$((CURRENT + 1))"
-            else
-              MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | tr -d 'v')
-              MINOR=$(echo $LATEST_TAG | cut -d. -f2)
-              NEW_MINOR=$((MINOR + 1))
-              NEW_VERSION=$((CURRENT + 1))
-              NEW_TAG="v${MAJOR}.${NEW_MINOR}.${NEW_VERSION}"
-            fi
+          # Find the latest semantic version tag (vMAJOR.MINOR.PATCH)
+          LATEST_TAG=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "Latest tag: ${LATEST_TAG:-none}"
+
+          if [ -z "$LATEST_TAG" ]; then
+            # No existing tags, start with v1.0.0
+            CURRENT_MAJOR=0
+            CURRENT_MINOR=0
+            CURRENT_PATCH=0
           else
-            # Increment build number
-            NEW_VERSION=$((CURRENT + 1))
-            
-            # Determine tag version from existing tags
-            LATEST_TAG=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+$' | sort -V | tail -1)
-            if [ -z "$LATEST_TAG" ]; then
-              NEW_TAG="v1.2.${NEW_VERSION}"
-            else
-              MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | tr -d 'v')
-              MINOR=$(echo $LATEST_TAG | cut -d. -f2)
-              NEW_TAG="v${MAJOR}.${MINOR}.${NEW_VERSION}"
-            fi
+            # Parse current version from tag
+            CURRENT_MAJOR=$(echo $LATEST_TAG | cut -d. -f1 | tr -d 'v')
+            CURRENT_MINOR=$(echo $LATEST_TAG | cut -d. -f2)
+            CURRENT_PATCH=$(echo $LATEST_TAG | cut -d. -f3)
           fi
-          
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          echo "Current: MAJOR=$CURRENT_MAJOR, MINOR=$CURRENT_MINOR, PATCH=$CURRENT_PATCH"
+
+          if [ "${{ inputs.bump_major }}" = "true" ]; then
+            # Bump major: MAJOR+1, MINOR=0, PATCH=0
+            NEW_MAJOR=$((CURRENT_MAJOR + 1))
+            NEW_MINOR=0
+            NEW_PATCH=0
+          elif [ "${{ inputs.bump_minor }}" = "true" ]; then
+            # Bump minor: MAJOR unchanged, MINOR+1, PATCH=0
+            NEW_MAJOR=$CURRENT_MAJOR
+            NEW_MINOR=$((CURRENT_MINOR + 1))
+            NEW_PATCH=0
+          else
+            # Bump patch (default): MAJOR unchanged, MINOR unchanged, PATCH+1
+            NEW_MAJOR=$CURRENT_MAJOR
+            NEW_MINOR=$CURRENT_MINOR
+            NEW_PATCH=$((CURRENT_PATCH + 1))
+          fi
+
+          NEW_TAG="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
+          NEW_VERSION_STRING="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
+
+          echo "new_version=${NEW_VERSION_STRING}" >> $GITHUB_OUTPUT
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-          echo "New version: $NEW_VERSION"
-          echo "New tag: $NEW_TAG"
+          echo "New tag: $NEW_TAG (MAJOR=$NEW_MAJOR, MINOR=$NEW_MINOR, PATCH=$NEW_PATCH)"
 
       - name: Update VERSION and commit on develop
         run: |
