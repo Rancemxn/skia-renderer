@@ -652,10 +652,15 @@ def sync_deps(args):
             if platform.system() == "Windows":
                 env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
             
-            # Directly use system Python to call gclient.py, bypassing vpython3
-            # which has its own output buffering that prevents real-time logs
+            # Use vpython3 with -u flag for unbuffered output
+            # vpython3.bat will setup cipd if needed, then call vpython3.exe
             gclient_py = depot_dir / "gclient.py"
-            gclient_cmd = [sys.executable, str(gclient_py)]
+            if platform.system() == "Windows":
+                vpython = depot_dir / "vpython3.bat"
+            else:
+                vpython = depot_dir / "vpython3"
+            
+            gclient_cmd = [str(vpython), "-u", str(gclient_py)]
             
             # Configure gclient for ANGLE (let gclient manage the clone)
             print("  Configuring gclient for ANGLE...", flush=True)
