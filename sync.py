@@ -653,15 +653,26 @@ def sync_deps(args):
             if platform.system() == "Windows":
                 env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
             
-            # Use vpython3 with -u flag for unbuffered output
-            # vpython3.bat will setup cipd if needed, then call vpython3.exe
+            # Initialize vpython3/cipd first, then use vpython3.exe directly
+            # This bypasses bat file buffering and allows direct control
             gclient_py = depot_dir / "gclient.py"
             if platform.system() == "Windows":
-                vpython = depot_dir / "vpython3.bat"
+                vpython_bat = depot_dir / "vpython3.bat"
+                vpython_exe = depot_dir / ".cipd_bin" / "vpython3.exe"
+                cipd_setup = depot_dir / "cipd_bin_setup.bat"
+                
+                # Initialize cipd if vpython3.exe doesn't exist
+                if not vpython_exe.exists():
+                    print("  Initializing vpython3/cipd...", flush=True)
+                    run_cmd([str(cipd_setup)], cwd=str(depot_dir), env=env, check=False)
             else:
-                vpython = depot_dir / "vpython3"
+                vpython_exe = depot_dir / ".cipd_bin" / "vpython3"
+                vpython_bat = depot_dir / "vpython3"
+                if not vpython_exe.exists():
+                    run_cmd([str(vpython_bat), "--version"], cwd=str(depot_dir), env=env, check=False)
             
-            gclient_cmd = [str(vpython), "-u", str(gclient_py)]
+            # Use vpython3.exe directly with -u flag for unbuffered output
+            gclient_cmd = [str(vpython_exe), "-u", str(gclient_py)]
             
             # Configure gclient for ANGLE (let gclient manage the clone)
             print("  Configuring gclient for ANGLE...", flush=True)
