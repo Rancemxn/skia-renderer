@@ -13,6 +13,7 @@ SDL3_VERSION = "3.4.2"
 VKBOOTSTRAP_VERSION = "1.4.343"
 SPDLOG_VERSION = "1.17.0"
 CLI11_VERSION = "2.6.2"
+DIRECTX_HEADERS_VERSION = "1.619.1"
 
 # ANGLE configuration
 ANGLE_COMMIT = "ae66dc5ad3506d3ea7196da4dba54a7b1f8b4f8c"
@@ -499,7 +500,7 @@ def sync_deps(args):
     # 1. SDL3
     if not args.skip_sdl:
         print("=" * 50)
-        print("[1/6] SDL3")
+        print("[1/7] SDL3")
         print("=" * 50)
         
         sdl_dir = deps_dir / "SDL3"
@@ -521,7 +522,7 @@ def sync_deps(args):
     # 2. vk-bootstrap
     if not args.skip_vkbootstrap:
         print("=" * 50)
-        print("[2/6] vk-bootstrap")
+        print("[2/7] vk-bootstrap")
         print("=" * 50)
         
         vkb_dir = deps_dir / "vk-bootstrap"
@@ -542,7 +543,7 @@ def sync_deps(args):
     # 3. spdlog (header-only library)
     if not args.skip_spdlog:
         print("=" * 50)
-        print("[3/6] spdlog")
+        print("[3/7] spdlog")
         print("=" * 50)
         
         spdlog_dir = deps_dir / "spdlog"
@@ -563,7 +564,7 @@ def sync_deps(args):
     # 4. CLI11 (header-only library)
     if not args.skip_cli11:
         print("=" * 50)
-        print("[4/6] CLI11")
+        print("[4/7] CLI11")
         print("=" * 50)
         
         cli11_dir = deps_dir / "CLI11"
@@ -584,7 +585,7 @@ def sync_deps(args):
     # 5. ANGLE (can be skipped with --skip-angle if already downloaded)
     if not args.skip_angle:
         print("=" * 50)
-        print("[5/6] ANGLE")
+        print("[5/7] ANGLE")
         print("=" * 50)
         
         angle_dir = deps_dir / "angle"
@@ -632,13 +633,37 @@ def sync_deps(args):
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})")
         print()
     else:
-        print("[5/6] ANGLE - Skipped (--skip-angle)")
+        print("[5/7] ANGLE - Skipped (--skip-angle)")
         print()
     
-    # 6. Skia
+    # 6. DirectX-Headers (Windows D3D12 helper headers)
+    if not args.skip_directx_headers:
+        print("=" * 50)
+        print("[6/7] DirectX-Headers")
+        print("=" * 50)
+        
+        dxh_dir = deps_dir / "DirectX-Headers"
+        
+        if dxh_dir.exists() and not overwrite:
+            print("  DirectX-Headers already exists, skipping")
+        else:
+            if dxh_dir.exists():
+                shutil.rmtree(dxh_dir)
+            
+            url = f"https://github.com/microsoft/DirectX-Headers/archive/refs/tags/v{DIRECTX_HEADERS_VERSION}.zip"
+            archive = download_file(url, downloads_dir, f"DirectX-Headers-{DIRECTX_HEADERS_VERSION}.zip",
+                                   proxy=args.proxy)
+            extract_archive(archive, dxh_dir)
+            print(f"  [OK] DirectX-Headers v{DIRECTX_HEADERS_VERSION}")
+        print()
+    else:
+        print("[6/7] DirectX-Headers - Skipped (--skip-directx-headers)")
+        print()
+    
+    # 7. Skia
     if not args.skip_skia:
         print("=" * 50)
-        print("[6/6] Skia")
+        print("[7/7] Skia")
         print("=" * 50)
         
         skia_dir = deps_dir / "skia"
@@ -689,7 +714,7 @@ def sync_deps(args):
     print("=" * 50)
     print()
     print("Dependencies downloaded:")
-    for name in ["SDL3", "vk-bootstrap", "spdlog", "CLI11", "angle", "skia", "depot_tools"]:
+    for name in ["SDL3", "vk-bootstrap", "spdlog", "CLI11", "angle", "DirectX-Headers", "skia", "depot_tools"]:
         if (deps_dir / name).exists():
             print(f"  [OK] {name}")
     print()
@@ -705,6 +730,7 @@ def main():
     parser.add_argument("--skip-spdlog", action="store_true", help="Skip spdlog")
     parser.add_argument("--skip-cli11", action="store_true", help="Skip CLI11")
     parser.add_argument("--skip-angle", action="store_true", help="Skip ANGLE")
+    parser.add_argument("--skip-directx-headers", action="store_true", help="Skip DirectX-Headers")
     parser.add_argument("--no-overwrite", action="store_true", help="Don't overwrite existing")
     
     # Download options

@@ -692,6 +692,55 @@ if(VERBOSE_DEPS)
 endif()
 
 # ========================================
+# DirectX-Headers (Windows only)
+# ========================================
+if(WIN32)
+    if(VERBOSE_DEPS)
+        message(STATUS "")
+        message(STATUS "[DirectX-Headers Detection]")
+    endif()
+    
+    set(DIRECTX_HEADERS_DIR "${DIRECTX_HEADERS_DIR}" CACHE PATH "DirectX-Headers directory")
+    if(NOT DIRECTX_HEADERS_DIR)
+        set(DIRECTX_HEADERS_DIR "${DEPS_DIR}/DirectX-Headers")
+    endif()
+    
+    if(VERBOSE_DEPS)
+        message(STATUS "  DIRECTX_HEADERS_DIR: ${DIRECTX_HEADERS_DIR}")
+    endif()
+    
+    # Check for DirectX-Headers
+    set(DIRECTX_HEADERS_INCLUDE_DIR "${DIRECTX_HEADERS_DIR}/include")
+    
+    if(VERBOSE_DEPS)
+        message(STATUS "  Searching for DirectX-Headers:")
+        if(EXISTS "${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
+            message(STATUS "    [FOUND] ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
+        else()
+            message(STATUS "    d3d12.h not found at ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3d12.h")
+        endif()
+        if(EXISTS "${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
+            message(STATUS "    [FOUND] ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
+        else()
+            message(STATUS "    d3dx12.h not found at ${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
+        endif()
+    endif()
+    
+    # Verify DirectX-Headers exists
+    if(NOT EXISTS "${DIRECTX_HEADERS_INCLUDE_DIR}/directx/d3dx12.h")
+        message(WARNING "DirectX-Headers not found. D3D12 backend may fail to compile. Run: python sync.py")
+    endif()
+    
+    # Results
+    if(VERBOSE_DEPS)
+        message(STATUS "")
+        message(STATUS "  DirectX-Headers Detection Results:")
+        message(STATUS "    DIRECTX_HEADERS_INCLUDE_DIR: ${DIRECTX_HEADERS_INCLUDE_DIR}")
+        message(STATUS "")
+    endif()
+endif()
+
+# ========================================
 # Executable
 # ========================================
 add_executable(${PROJECT_NAME}
@@ -733,6 +782,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${ANGLE_INCLUDE_DIR}/GLES2
     ${ANGLE_INCLUDE_DIR}/GLES3
     ${ANGLE_INCLUDE_DIR}/KHR
+    # DirectX-Headers include directory (Windows only)
+    $<$<WIN32>:${DIRECTX_HEADERS_INCLUDE_DIR}>
 )
 
 # ========================================
@@ -839,6 +890,9 @@ message(STATUS "Graphics APIs:")
 message(STATUS "  Vulkan:     ${Vulkan_SDK}")
 message(STATUS "  OpenGL:     ${OPENGL_LIBRARIES}")
 message(STATUS "  ANGLE:      ${ANGLE_INCLUDE_DIR}")
+if(WIN32)
+message(STATUS "  D3D12:      ${DIRECTX_HEADERS_INCLUDE_DIR}")
+endif()
 message(STATUS "")
 message(STATUS "Renderers:")
 message(STATUS "  Vulkan:     Skia Graphite")

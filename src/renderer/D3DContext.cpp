@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#include <directx/d3dx12.h>
 #include <string>
 
 namespace skia_renderer {
@@ -161,7 +162,7 @@ bool D3DContext::createCommandQueue() {
 bool D3DContext::createSwapChain() {
     // Get HWND from SDL window
     SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
-    HWND hwnd = (HWND)SDL_GetProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    HWND hwnd = (HWND)SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
     if (!hwnd) {
         LOG_ERROR("Failed to get HWND from SDL window");
         return false;
