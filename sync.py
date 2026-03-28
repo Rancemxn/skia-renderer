@@ -615,6 +615,14 @@ def sync_deps(args):
         else:
             print(f"  depot_tools already exists: {depot_dir}", flush=True)
         
+        # Create git.bat wrapper for Windows if it doesn't exist
+        # depot_tools's git_cache.py expects git.bat on Windows, but it's not provided
+        if platform.system() == "Windows":
+            git_bat = depot_dir / "git.bat"
+            if not git_bat.exists():
+                print("  Creating git.bat wrapper for depot_tools...", flush=True)
+                git_bat.write_text("@echo off\ngit %*\n", encoding="utf-8")
+        
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping", flush=True)
         else:
@@ -677,6 +685,14 @@ def sync_deps(args):
             git_clone(depot_url, depot_dir, verbose=verbose)
         else:
             print(f"  depot_tools already exists: {depot_dir}", flush=True)
+        
+        # Create git.bat wrapper for Windows if it doesn't exist
+        # depot_tools's git_cache.py expects git.bat on Windows, but it's not provided
+        if platform.system() == "Windows":
+            git_bat = depot_dir / "git.bat"
+            if not git_bat.exists():
+                print("  Creating git.bat wrapper for depot_tools...", flush=True)
+                git_bat.write_text("@echo off\ngit %*\n", encoding="utf-8")
         
         # Clone Skia
         if skia_dir.exists() and not overwrite:
