@@ -65,22 +65,24 @@ jobs:
           CURRENT_MAJOR_MINOR=${{ steps.current_version.outputs.major_minor }}
           CURRENT_BUILD=${{ steps.current_version.outputs.build_number }}
           
-          # ALWAYS increment BUILD_NUMBER (represents commit count)
-          NEW_BUILD=$((CURRENT_BUILD + 1))
-          
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ inputs.bump_major }}" = "true" ]; then
-              # Bump major: MAJOR_MINOR + 10 (BUILD still increments)
+              # Bump major: MAJOR_MINOR + 10, BUILD reset to 0
               NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 10))
+              NEW_BUILD=0
             elif [ "${{ inputs.bump_minor }}" = "true" ]; then
-              # Bump minor: MAJOR_MINOR + 1 (BUILD still increments)
+              # Bump minor: MAJOR_MINOR + 1, BUILD reset to 0
               NEW_MAJOR_MINOR=$((CURRENT_MAJOR_MINOR + 1))
+              NEW_BUILD=0
             else
+              # Default release: BUILD +1
               NEW_MAJOR_MINOR=$CURRENT_MAJOR_MINOR
+              NEW_BUILD=$((CURRENT_BUILD + 1))
             fi
           else
             # Push trigger: only bump BUILD_NUMBER
             NEW_MAJOR_MINOR=$CURRENT_MAJOR_MINOR
+            NEW_BUILD=$((CURRENT_BUILD + 1))
           fi
           
           # Parse final version
