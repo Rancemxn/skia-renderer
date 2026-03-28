@@ -628,6 +628,10 @@ def sync_deps(args):
             env["PATH"] = str(depot_dir) + os.pathsep + env.get("PATH", "")
             env["DEPOT_TOOLS_UPDATE"] = "0"
             env["GCLIENT_PY3"] = "1"
+            # Set GIT_CACHE_PATH to avoid Windows git.bat not found error
+            git_cache_dir = deps_dir / "git_cache"
+            git_cache_dir.mkdir(parents=True, exist_ok=True)
+            env["GIT_CACHE_PATH"] = str(git_cache_dir)
             if platform.system() == "Windows":
                 env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
             
@@ -644,7 +648,7 @@ def sync_deps(args):
             
             # Run gclient sync (this will clone ANGLE + all dependencies)
             print("  Running gclient sync for ANGLE...", flush=True)
-            run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
+            run_cmd([str(gclient), "sync", "--with_branch_heads", "--with_tags"],
                    cwd=str(angle_dir), env=env, check=False, verbose=verbose)
             
             # Run gclient runhooks
