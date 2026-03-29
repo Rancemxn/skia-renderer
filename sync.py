@@ -44,7 +44,7 @@ def find_tool(name: str, extra_paths: list = None) -> str:
     
     return None
 
-def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False) -> subprocess.CompletedProcess:
+def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False, shell: bool = False) -> subprocess.CompletedProcess:
     """Run a command with real-time output streaming"""
     merged_env = os.environ.copy()
     if env:
@@ -56,6 +56,7 @@ def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, ve
         cmd, 
         cwd=cwd, 
         env=merged_env,
+        shell=shell,
     )
     
     process.wait()
@@ -685,7 +686,7 @@ def sync_deps(args):
             if gclient.exists():
                 try:
                     run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
-                           cwd=str(deps_dir), env=env, check=False, verbose=verbose)
+                           cwd=str(deps_dir), env=env, check=False, verbose=verbose, shell=platform.system() == "Windows")
                 except Exception as e:
                     print(f"  Warning: gclient sync error: {e}", flush=True)
             
