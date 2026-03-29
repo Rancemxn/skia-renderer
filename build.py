@@ -307,12 +307,24 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     
     # Check if ANGLE is already built
     out_dir = angle_dir / "out" / build_type
-    lib_ext = ".lib" if platform.system() == "Windows" else ".a"
-    egl_lib = out_dir / f"libEGL{lib_ext}"
-    gles_lib = out_dir / f"libGLESv2{lib_ext}"
+    
+    # ANGLE outputs: libEGL.dll.lib and libGLESv2.dll.lib on Windows
+    # Check for both naming conventions
+    if platform.system() == "Windows":
+        egl_lib = out_dir / "libEGL.dll.lib"
+        gles_lib = out_dir / "libGLESv2.dll.lib"
+        # Also check for .dll files as a fallback
+        egl_dll = out_dir / "libEGL.dll"
+        gles_dll = out_dir / "libGLESv2.dll"
+        angle_built = (egl_lib.exists() and gles_lib.exists()) or (egl_dll.exists() and gles_dll.exists())
+    else:
+        lib_ext = ".a"
+        egl_lib = out_dir / f"libEGL{lib_ext}"
+        gles_lib = out_dir / f"libGLESv2{lib_ext}"
+        angle_built = egl_lib.exists() and gles_lib.exists()
     
     if skip_angle:
-        if egl_lib.exists() and gles_lib.exists():
+        if angle_built:
             print(f"  Skipping build (--skip-angle), using existing: {out_dir}")
             return True
         else:
