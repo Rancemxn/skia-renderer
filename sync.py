@@ -45,21 +45,17 @@ def find_tool(name: str, extra_paths: list = None) -> str:
     return None
 
 def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False) -> subprocess.CompletedProcess:
-    """Run a command with direct terminal output (real-time)"""
+    """Run a command with real-time output streaming"""
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
     
-    cmd_str = " ".join(str(c) for c in cmd)
-    print(f"  Running: {cmd_str}", flush=True)
-    
-    is_windows = platform.system() == "Windows"
+    print(f"  Running: {' '.join(str(c) for c in cmd)}", flush=True)
     
     process = subprocess.Popen(
-        cmd_str if is_windows else cmd, 
+        cmd, 
         cwd=cwd, 
         env=merged_env,
-        shell=is_windows,
     )
     
     process.wait()
