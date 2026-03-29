@@ -11,10 +11,6 @@ on:
         options:
           - Release
           - Debug
-  push:
-    branches: [develop, main]
-  pull_request:
-    branches: [develop, main]
 
 permissions:
   contents: read
