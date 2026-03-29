@@ -460,30 +460,6 @@ def setup_angle_gclient(angle_dir: Path, commit: str) -> None:
     print(f"  Created .gclient config", flush=True)
 
 
-def run_cmd_with_info(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False) -> subprocess.CompletedProcess:
-    merged_env = os.environ.copy()
-    if env:
-        merged_env.update(env)
-    
-    cmd_str = " ".join(str(c) for c in cmd)
-    print(f"  Running: {cmd_str}", flush=True)
-    
-    is_windows = platform.system() == "Windows"
-    
-    process = subprocess.Popen(
-        cmd_str if is_windows else cmd, 
-        cwd=cwd, 
-        env=merged_env,
-        shell=is_windows,
-    )
-    
-    process.wait()
-    
-    if check and process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, cmd)
-    
-    return subprocess.CompletedProcess(cmd, process.returncode, None, None)
-
 # ========================================
 # Main
 # ========================================
@@ -672,8 +648,13 @@ def sync_deps(args):
         if platform.system() == "Windows":
             git_bat = depot_dir / "git.bat"
             if not git_bat.exists():
-                print("  Creating git.bat wrapper for depot_tools...", flush=True)
-                git_bat.write_text("@echo off\ngit %*\n", encoding="utf-8")
+                system_git = shutil.which("git")
+                print(f"  Creating git.bat wrapper for depot_tools pointing to: {system_git}", flush=True)
+                
+                git_path = system_git if system_git else "git.exe"
+                
+                content = f'@echo off\n"{git_path}" %*\n'
+                git_bat.write_text(content, encoding="utf-8")
         
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping", flush=True)
@@ -705,7 +686,7 @@ def sync_deps(args):
             if gclient.exists():
                 try:
                     # Run gclient sync from deps_dir (where .gclient is located)
-                    run_cmd_with_info([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
+                    run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
                            cwd=str(deps_dir), env=env, check=False, verbose=verbose)
                 except Exception as e:
                     print(f"  Warning: gclient sync error: {e}", flush=True)
@@ -732,13 +713,16 @@ def sync_deps(args):
         else:
             print(f"  depot_tools already exists: {depot_dir}", flush=True)
         
-        # Create git.bat wrapper for Windows if it doesn't exist
-        # depot_tools's git_cache.py expects git.bat on Windows, but it's not provided
         if platform.system() == "Windows":
             git_bat = depot_dir / "git.bat"
             if not git_bat.exists():
-                print("  Creating git.bat wrapper for depot_tools...", flush=True)
-                git_bat.write_text("@echo off\ngit %*\n", encoding="utf-8")
+                system_git = shutil.which("git")
+                print(f"  Creating git.bat wrapper for depot_tools pointing to: {system_git}", flush=True)
+                
+                git_path = system_git if system_git else "git.exe"
+                
+                content = f'@echo off\n"{git_path}" %*\n'
+                git_bat.write_text(content, encoding="utf-8")
         
         # Clone Skia
         if skia_dir.exists() and not overwrite:
