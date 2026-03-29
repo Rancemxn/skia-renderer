@@ -535,24 +535,38 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
                     print(f"  Patch already applied: {patch_file.name}")
     
     # Patch Dawn's cmake_utils.py to fix Windows command line length limit
-    # Dawn build scripts are in third_party/dawn (GN build scripts)
-    # Dawn source code is in third_party/externals/dawn
-    # The cmake_utils.py that needs patching is in the build scripts directory
+    # Dawn source code is in third_party/externals/dawn (synced by git-sync-deps)
+    # The cmake_utils.py is accessed from third_party/dawn during build (may be symlink)
+    # We need to patch the actual source file in externals/dawn
     dawn_dirs = [
-        skia_dir / "third_party" / "dawn",           # GN build scripts (contains cmake_utils.py)
-        skia_dir / "third_party" / "externals" / "dawn",  # Source code (fallback)
+        skia_dir / "third_party" / "externals" / "dawn",  # Dawn source code (actual location)
+        skia_dir / "third_party" / "dawn",                # GN build scripts (may be symlink)
     ]
     patched = False
     for dawn_dir in dawn_dirs:
-        if dawn_dir.exists():
-            cmake_utils = dawn_dir / "cmake_utils.py"
-            if cmake_utils.exists():
-                if patch_dawn_cmake_utils(dawn_dir):
-                    print(f"  Patched: Dawn cmake_utils.py at {dawn_dir.relative_to(skia_dir)} (Windows cmd length fix)")
-                    patched = True
-                    break
+        cmake_utils = dawn_dir / "cmake_utils.py"
+        print(f"  Checking for cmake_utils.py at: {cmake_utils}")
+        if cmake_utils.exists():
+            print(f"  Found cmake_utils.py, attempting patch...")
+            if patch_dawn_cmake_utils(dawn_dir):
+                print(f"  Patched: Dawn cmake_utils.py at {dawn_dir.relative_to(skia_dir)} (Windows cmd length fix)")
+                patched = True
+                break
+        else:
+            # Check if directory exists at all
+            if dawn_dir.exists():
+                print(f"  Directory exists but cmake_utils.py not found: {dawn_dir}")
+                # List contents to debug
+                try:
+                    contents = list(dawn_dir.iterdir())[:10]
+                    print(f"  Directory contents (first 10): {[f.name for f in contents]}")
+                except:
+                    pass
+            else:
+                print(f"  Directory does not exist: {dawn_dir}")
+    
     if not patched:
-        print("  WARNING: Dawn cmake_utils.py not found, skipping patch")
+        print("  WARNING: Dawn cmake_utils.py not found, will attempt patch during Dawn build if needed")
     
     # Setup environment
     env = os.environ.copy()
