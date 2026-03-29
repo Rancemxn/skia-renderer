@@ -460,6 +460,19 @@ def setup_angle_gclient(angle_dir: Path, commit: str) -> None:
     
     print(f"  Created .gclient config", flush=True)
 
+def init_depot_tools(depot_dir: Path):
+    """Trigger depot_tools bootstrap to generate necessary config files"""
+    gclient = depot_dir / ("gclient.bat" if platform.system() == "Windows" else "gclient")
+    
+    if gclient.exists():
+        print(f"  Initializing depot_tools (triggering bootstrap)...", flush=True)
+        try:
+            run_cmd([str(gclient), "--version"], check=True)
+            print("  [OK] depot_tools initialized.", flush=True)
+        except Exception as e:
+            print(f"  Warning: depot_tools initialization failed: {e}", flush=True)
+            print("  (This might be expected on first run, continuing...)", flush=True)
+
 # ========================================
 # Main
 # ========================================
@@ -655,6 +668,8 @@ def sync_deps(args):
                 
                 content = f'@echo off\n"{git_path}" %*\n'
                 git_bat.write_text(content, encoding="utf-8")
+
+        init_depot_tools(depot_dir)
         
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping", flush=True)
@@ -723,6 +738,8 @@ def sync_deps(args):
                 content = f'@echo off\n"{git_path}" %*\n'
                 git_bat.write_text(content, encoding="utf-8")
         
+        init_depot_tools(depot_dir)
+
         # Clone Skia
         if skia_dir.exists() and not overwrite:
             print("  Skia already exists, skipping clone", flush=True)
