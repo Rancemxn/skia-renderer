@@ -787,7 +787,14 @@ def sync_deps(args):
 def main():
     parser = argparse.ArgumentParser(description="Sync dependencies for Skia Renderer")
     
-    # Sync options
+    # Selective sync (only sync specified dependencies)
+    parser.add_argument("--sdl3", action="store_true", help="Sync only SDL3")
+    parser.add_argument("--vkbootstrap", action="store_true", help="Sync only vk-bootstrap")
+    parser.add_argument("--angle", action="store_true", help="Sync only ANGLE")
+    parser.add_argument("--skia", action="store_true", help="Sync only Skia")
+    parser.add_argument("--headers-only", action="store_true", help="Sync only header-only libraries (spdlog, CLI11, DirectX-Headers)")
+    
+    # Skip options (skip specified dependencies)
     parser.add_argument("--skip-skia", action="store_true", help="Skip Skia")
     parser.add_argument("--skip-sdl", action="store_true", help="Skip SDL3")
     parser.add_argument("--skip-vkbootstrap", action="store_true", help="Skip vk-bootstrap")
@@ -805,6 +812,25 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     
     args = parser.parse_args()
+    
+    # Handle selective sync mode
+    if args.sdl3 or args.vkbootstrap or args.angle or args.skia or args.headers_only:
+        # In selective mode, skip everything except what's explicitly selected
+        if not args.sdl3:
+            args.skip_sdl = True
+        if not args.vkbootstrap:
+            args.skip_vkbootstrap = True
+        if not args.angle:
+            args.skip_angle = True
+        if not args.skia:
+            args.skip_skia = True
+        
+        # headers-only mode: sync only header libraries
+        if args.headers_only:
+            args.skip_sdl = True
+            args.skip_vkbootstrap = True
+            args.skip_angle = True
+            args.skip_skia = True
     
     try:
         return sync_deps(args)

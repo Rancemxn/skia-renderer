@@ -11,23 +11,136 @@ on:
         options:
           - Release
           - Debug
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
 
 permissions:
   contents: read
 
+env:
+  PYTHONUNBUFFERED: 1
+  SCCACHE_GHA_ENABLED: true
+
 jobs:
-  build-windows:
+  # ========================================
+  # Job 1: Build SDL3 (Parallel)
+  # ========================================
+  build-sdl3:
     runs-on: windows-latest
-    env:
-      PYTHONUNBUFFERED: 1
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ----------------------------------------
-      # Setup Build Tools
-      # ----------------------------------------
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install LLVM and Clang 20
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sync SDL3
+        run: python -u sync.py --sdl3
+
+      - name: Build SDL3
+        run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-vkbootstrap --skip-angle --skip-skia --skip-main
+
+      - name: Upload SDL3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdl3-${{ inputs.build_type || 'Release' }}
+          path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
+          retention-days: 1
+
+  # ========================================
+  # Job 2: Build vk-bootstrap (Parallel)
+  # ========================================
+  build-vkbootstrap:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install LLVM and Clang 20
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sync vk-bootstrap
+        run: python -u sync.py --vkbootstrap
+
+      - name: Build vk-bootstrap
+        run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-sdl --skip-angle --skip-skia --skip-main
+
+      - name: Upload vk-bootstrap artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vkbootstrap-${{ inputs.build_type || 'Release' }}
+          path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
+          retention-days: 1
+
+  # ========================================
+  # Job 3: Build ANGLE (Parallel)
+  # ========================================
+  build-angle:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install LLVM and Clang 20
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "20"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sync ANGLE
+        run: python -u sync.py --angle
+
+      - name: Build ANGLE
+        run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-sdl --skip-vkbootstrap --skip-skia --skip-main
+
+      - name: Upload ANGLE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: angle-${{ inputs.build_type || 'Release' }}
+          path: |
+            deps/angle/out/${{ inputs.build_type || 'Release' }}
+            !deps/angle/out/${{ inputs.build_type || 'Release' }}/**/*.obj
+          retention-days: 1
+
+  # ========================================
+  # Job 4: Build Skia (depends on ANGLE)
+  # ========================================
+  build-skia:
+    runs-on: windows-latest
+    needs: [build-angle]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
@@ -47,118 +160,137 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ----------------------------------------
-      # Verify Environment
-      # ----------------------------------------
-      - name: Verify build environment
-        run: |
-          Write-Host "=== Build Environment ==="
-          Write-Host ""
-          
-          Write-Host "Clang-cl:"
-          clang-cl --version
-          Write-Host ""
-          
-          Write-Host "CMake:"
-          cmake --version
-          Write-Host ""
-          
-          Write-Host "Ninja:"
-          ninja --version
-          Write-Host ""
-          
-          Write-Host "Python:"
-          python --version
-          Write-Host ""
-          
-          Write-Host "Vulkan SDK: $env:VULKAN_SDK"
-          Write-Host "SCCACHE_PATH: $env:SCCACHE_PATH"
-          Write-Host ""
+      - name: Sync Skia
+        run: python -u sync.py --skia
 
-      # ----------------------------------------
-      # Sync Dependencies
-      # ----------------------------------------
-      - name: Sync dependencies
-        run: python -u sync.py
-        env:
-          SCCACHE_GHA_ENABLED: "true"
+      - name: Download ANGLE artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: angle-${{ inputs.build_type || 'Release' }}
+          path: deps/angle/out/${{ inputs.build_type || 'Release' }}
 
-      # ----------------------------------------
-      # Build
-      # ----------------------------------------
-      - name: Build ${{ inputs.build_type }}
-        run: python -u build.py --build-type ${{ inputs.build_type }}
-        env:
-          SCCACHE_GHA_ENABLED: "true"
+      - name: Build Skia
+        run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-sdl --skip-vkbootstrap --skip-angle --skip-main
 
-      # ----------------------------------------
-      # Show sccache stats
-      # ----------------------------------------
+      - name: Upload Skia artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skia-${{ inputs.build_type || 'Release' }}
+          path: |
+            deps/skia/out/${{ inputs.build_type || 'Release' }}
+            !deps/skia/out/${{ inputs.build_type || 'Release' }}/**/*.obj
+            !deps/skia/out/${{ inputs.build_type || 'Release' }}/**/*.pdb
+          retention-days: 1
+
+  # ========================================
+  # Job 5: Build Main Project (depends on all)
+  # ========================================
+  build-main:
+    runs-on: windows-latest
+    needs: [build-sdl3, build-vkbootstrap, build-skia]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install LLVM and Clang 20
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "20"
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sync dependencies (headers only)
+        run: python -u sync.py --headers-only
+
+      - name: Download SDL3 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sdl3-${{ inputs.build_type || 'Release' }}
+          path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
+
+      - name: Download vk-bootstrap artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vkbootstrap-${{ inputs.build_type || 'Release' }}
+          path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
+
+      - name: Download ANGLE artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: angle-${{ inputs.build_type || 'Release' }}
+          path: deps/angle/out/${{ inputs.build_type || 'Release' }}
+
+      - name: Download Skia artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: skia-${{ inputs.build_type || 'Release' }}
+          path: deps/skia/out/${{ inputs.build_type || 'Release' }}
+
+      - name: Build main project
+        run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-deps
+
       - name: Show sccache stats
         run: $env:SCCACHE_PATH --show-stats
 
-      # ----------------------------------------
-      # Package Artifacts
-      # ----------------------------------------
       - name: Package artifact
         id: package
         run: |
           $version = Get-Content VERSION
-          $buildType = "${{ inputs.build_type }}"
+          $buildType = "${{ inputs.build_type || 'Release' }}"
           $zipName = "skia-renderer-v$version-windows-x64-$buildType.zip"
-          
+
           # Create package directory
           New-Item -ItemType Directory -Force -Path package
-          
+
           # Copy executable
           Copy-Item build/$buildType/skia-renderer.exe package/
-          
-          # Copy DLLs for Release build
-          if ($buildType -eq "Release") {
-            Copy-Item deps/SDL3/out/Release/SDL3.dll package/
-            Copy-Item deps/angle/out/Release/libEGL.dll package/
-            Copy-Item deps/angle/out/Release/libGLESv2.dll package/
-          } else {
-            Copy-Item deps/SDL3/out/Debug/SDL3.dll package/
-            Copy-Item deps/angle/out/Debug/libEGL.dll package/
-            Copy-Item deps/angle/out/Debug/libGLESv2.dll package/
-          }
-          
+
+          # Copy DLLs
+          Copy-Item deps/SDL3/out/$buildType/SDL3.dll package/
+          Copy-Item deps/angle/out/$buildType/libEGL.dll package/
+          Copy-Item deps/angle/out/$buildType/libGLESv2.dll package/
+
           # Create zip
           Compress-Archive -Path package/* -DestinationPath $zipName
-          
+
           # Calculate hash
           $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
-          
+
           # Get file size
           $size = (Get-Item $zipName).Length / 1MB
-          
+
           echo "artifact_name=$zipName" >> $env:GITHUB_OUTPUT
           echo "artifact_hash=$hash" >> $env:GITHUB_OUTPUT
           echo "artifact_size=$([math]::Round($size, 2))" >> $env:GITHUB_OUTPUT
-          
+
           Write-Host "Package created: $zipName"
           Write-Host "Size: $([math]::Round($size, 2)) MB"
           Write-Host "SHA256: $hash"
 
-      # ----------------------------------------
-      # Upload Artifact
-      # ----------------------------------------
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ inputs.build_type }}
+          name: windows-${{ inputs.build_type || 'Release' }}
           path: ${{ steps.package.outputs.artifact_name }}
           retention-days: 7
 
-      # ----------------------------------------
-      # Summary
-      # ----------------------------------------
       - name: Summary
         run: |
           echo "### Build Test Summary" >> $env:GITHUB_STEP_SUMMARY
           echo "" >> $env:GITHUB_STEP_SUMMARY
-          echo "- **Build Type**: `${{ inputs.build_type }}`" >> $env:GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: `${{ inputs.build_type || 'Release' }}`" >> $env:GITHUB_STEP_SUMMARY
           echo "- **Artifact**: `${{ steps.package.outputs.artifact_name }}`" >> $env:GITHUB_STEP_SUMMARY
           echo "- **Size**: `${{ steps.package.outputs.artifact_size }} MB`" >> $env:GITHUB_STEP_SUMMARY
           echo "- **SHA256**: `${{ steps.package.outputs.artifact_hash }}`" >> $env:GITHUB_STEP_SUMMARY
