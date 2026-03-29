@@ -45,20 +45,21 @@ def find_tool(name: str, extra_paths: list = None) -> str:
     return None
 
 def run_cmd(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False) -> subprocess.CompletedProcess:
-    """Run a command with real-time output streaming"""
+    """Run a command with direct terminal output (real-time)"""
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
     
-    print(f"  Running: {' '.join(str(c) for c in cmd)}", flush=True)
+    cmd_str = " ".join(str(c) for c in cmd)
+    print(f"  Running: {cmd_str}", flush=True)
     
-    # Let child process inherit stdout/stderr directly for real-time output
-    # This avoids pipe buffering issues where child processes detect non-TTY
-    # and switch to block buffering (4KB-8KB), causing delayed output
+    is_windows = platform.system() == "Windows"
+    
     process = subprocess.Popen(
-        cmd, 
+        cmd_str if is_windows else cmd, 
         cwd=cwd, 
         env=merged_env,
+        shell=is_windows,
     )
     
     process.wait()
@@ -442,6 +443,26 @@ def git_clone_at_commit(url: str, target_dir: Path, commit: str, depth: int = 1,
     
     return target_dir
 
+def setup_angle_gclient(angle_dir: Path, commit: str) -> None:
+    """Create .gclient file for ANGLE and run gclient sync"""
+    gclient_file = angle_dir.parent / ".gclient"
+    
+    gclient_content = f'''solutions = [
+  {{
+    "name": "angle",
+    "url": "https://github.com/google/angle.git@{commit}",
+    "deps_file": "DEPS",
+    "managed": False,
+    "custom_deps": {{}},
+  }},
+]
+'''
+    
+    with open(gclient_file, 'w') as f:
+        f.write(gclient_content)
+    
+    print(f"  Created .gclient config", flush=True)
+
 # ========================================
 # Main
 # ========================================
@@ -627,49 +648,37 @@ def sync_deps(args):
         else:
             print(f"  depot_tools already exists: {depot_dir}", flush=True)
         
-        # Create git.bat wrapper for Windows if it doesn't exist
-        # depot_tools's git_cache.py expects git.bat on Windows, but it's not provided
-        if platform.system() == "Windows":
-            git_bat = depot_dir / "git.bat"
-            if not git_bat.exists():
-                print("  Creating git.bat wrapper for depot_tools...", flush=True)
-                git_bat.write_text("@echo off\ngit %*\n", encoding="utf-8")
-        
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping", flush=True)
         else:
-            # Remove existing ANGLE directory
-            if angle_dir.exists():
-                shutil.rmtree(angle_dir)
-            angle_dir.mkdir(parents=True, exist_ok=True)
+            # ANGLE needs full clone for gclient sync to work properly
+            # depth=0 means full clone
+            git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT, depth=0, verbose=verbose)
             
-            # Setup environment
+            # Setup gclient configuration
+            setup_angle_gclient(angle_dir, ANGLE_COMMIT)
+            
+            # Run gclient sync to get ANGLE dependencies
+            print("  Running gclient sync for ANGLE dependencies...", flush=True)
             env = os.environ.copy()
             env["PATH"] = str(depot_dir) + os.pathsep + env.get("PATH", "")
             env["DEPOT_TOOLS_UPDATE"] = "0"
             env["GCLIENT_PY3"] = "1"
-
             if platform.system() == "Windows":
                 env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
+            
+            if platform.system() == "Windows":
                 gclient = depot_dir / "gclient.bat"
             else:
                 gclient = depot_dir / "gclient"
             
-            # Configure gclient for ANGLE (let gclient manage the clone)
-            print("  Configuring gclient for ANGLE...", flush=True)
-            gclient_spec = f"solutions = [ {{ 'name': '.', 'url': 'https://chromium.googlesource.com/angle/angle.git@{ANGLE_COMMIT}', 'deps_file': 'DEPS', 'managed': True, 'custom_vars': {{}}, }}, ];"
-            run_cmd([str(gclient), "config", "--spec", gclient_spec],
-                   cwd=str(angle_dir), env=env, verbose=verbose)
-            
-            # Run gclient sync (this will clone ANGLE + all dependencies)
-            print("  Running gclient sync for ANGLE...", flush=True)
-            run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
-                   cwd=str(angle_dir), env=env, check=False, verbose=verbose)
-            
-            # Run gclient runhooks
-            print("  Running gclient runhooks...", flush=True)
-            run_cmd([str(gclient), "runhooks"],
-                   cwd=str(angle_dir), env=env, check=False, verbose=verbose)
+            if gclient.exists():
+                try:
+                    # Run gclient sync from deps_dir (where .gclient is located)
+                    run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
+                           cwd=str(deps_dir), env=env, check=False, verbose=verbose)
+                except Exception as e:
+                    print(f"  Warning: gclient sync error: {e}", flush=True)
             
             print(f"  [OK] ANGLE (commit {ANGLE_COMMIT[:8]})", flush=True)
         print(flush=True)
