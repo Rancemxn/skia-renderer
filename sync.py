@@ -459,6 +459,29 @@ def setup_angle_gclient(angle_dir: Path, commit: str) -> None:
     
     print(f"  Created .gclient config", flush=True)
 
+def run_cmd_with_info(cmd: list, cwd: str = None, check: bool = True, env: dict = None, verbose: bool = False) -> subprocess.CompletedProcess:
+    merged_env = os.environ.copy()
+    if env:
+        merged_env.update(env)
+    
+    cmd_str = " ".join(str(c) for c in cmd)
+    print(f"  Running: {cmd_str}", flush=True)
+    
+    is_windows = platform.system() == "Windows"
+    
+    process = subprocess.Popen(
+        cmd_str if is_windows else cmd, 
+        cwd=cwd, 
+        env=merged_env,
+        shell=is_windows,
+    )
+    
+    process.wait()
+    
+    if check and process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, cmd)
+    
+    return subprocess.CompletedProcess(cmd, process.returncode, None, None)
 
 # ========================================
 # Main
@@ -686,7 +709,7 @@ def sync_deps(args):
             if gclient.exists():
                 try:
                     # Run gclient sync from deps_dir (where .gclient is located)
-                    run_cmd([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
+                    run_cmd_with_info([str(gclient), "sync", "--no-history", "--with_branch_heads", "--with_tags"],
                            cwd=str(deps_dir), env=env, check=False, verbose=verbose)
                 except Exception as e:
                     print(f"  Warning: gclient sync error: {e}", flush=True)
