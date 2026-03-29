@@ -643,10 +643,19 @@ def sync_deps(args):
             git_clone(depot_url, depot_dir, depth=1, verbose=verbose)
         else:
             print(f"  depot_tools already exists: {depot_dir}", flush=True)
+
+        if platform.system() == "Windows":
+            git_bat = depot_dir / "git.bat"
+            if not git_bat.exists():
+                print("  Creating git.bat wrapper for depot_tools...", flush=True)
+                git_bat.write_text("@echo off\ngit %*\n", encoding="utf-8")
         
         if angle_dir.exists() and not overwrite:
             print("  ANGLE already exists, skipping", flush=True)
         else:
+            if angle_dir.exists():
+                shutil.rmtree(angle_dir)
+            angle_dir.mkdir(parents=True, exist_ok=True)
             # ANGLE needs full clone for gclient sync to work properly
             # depth=0 means full clone
             git_clone_at_commit(ANGLE_REPO_URL, angle_dir, ANGLE_COMMIT, depth=0, verbose=verbose)

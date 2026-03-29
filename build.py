@@ -334,48 +334,6 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
     if platform.system() == "Windows":
         env["DEPOT_TOOLS_WIN_TOOLCHAIN"] = "0"
     
-    # Check if we need to run gclient sync
-    # ANGLE requires third_party dependencies and build config files
-    third_party = angle_dir / "third_party"
-    dotfile_settings = angle_dir / "build" / "dotfile_settings.gni"
-    
-    need_gclient_sync = not (third_party / "zlib").exists() or not dotfile_settings.exists()
-    
-    if need_gclient_sync:
-        print("  Running gclient sync for ANGLE dependencies...")
-        gclient = find_gclient(depot_tools)
-        if gclient:
-            # Check if .gclient exists in deps_dir
-            gclient_file = angle_dir.parent / ".gclient"
-            if not gclient_file.exists():
-                # Create .gclient config
-                gclient_content = f'''solutions = [
-  {{
-    "name": "angle",
-    "url": "https://github.com/google/angle.git",
-    "deps_file": "DEPS",
-    "managed": False,
-    "custom_deps": {{}},
-  }},
-]
-'''
-                with open(gclient_file, 'w') as f:
-                    f.write(gclient_content)
-                print("  Created .gclient config")
-            
-            try:
-                # Run gclient sync from deps_dir (where .gclient is located)
-                run_cmd([gclient, "sync", "--with_branch_heads", "--with_tags"],
-                       cwd=str(angle_dir.parent), env=env, check=False)
-            except Exception as e:
-                print(f"  Warning: gclient sync error: {e}")
-                print("  Continuing with build...")
-        else:
-            print("  Warning: gclient not found, skipping dependency sync")
-    
-    # GN args
-    is_windows = platform.system() == "Windows"
-    
     gn_args = [
         f'target_cpu="{target_cpu}"',
         f'is_debug={"true" if build_type == "Debug" else "false"}',
