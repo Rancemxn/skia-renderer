@@ -130,7 +130,12 @@ def find_sccache() -> str:
     return None
 
 def find_gn(depot_tools: Path) -> str:
-    """Find gn executable"""
+    """Find gn"""
+    if platform.system() == "Windows":
+        gn_bat = depot_tools / "gn.bat"
+        if gn_bat.exists():
+            return str(gn_bat)
+        print(f"  WARNING: gn.bat not found in {depot_tools}")
     gn = find_tool("gn", [str(depot_tools)])
     return gn
 
