@@ -406,9 +406,8 @@ def build_angle(angle_dir: Path, build_type: str, llvm_path: str,
 def patch_dawn_cmake_utils(dawn_dir: Path) -> bool:
     """Fix Dawn's cmake_utils.py to handle Windows command line length limit.
     
-    The discover_dependencies function passes too many arguments to ninja -tinputs,
-    causing "The syntax of the command is incorrect" error on Windows.
-    This function patches it to use batched processing.
+    The discover_dependencies function uses BATCH_SIZE=100 which can still be too large.
+    This function reduces the batch size to avoid Windows command line length limit.
     """
     cmake_utils_path = dawn_dir / "cmake_utils.py"
     
@@ -418,78 +417,47 @@ def patch_dawn_cmake_utils(dawn_dir: Path) -> bool:
     
     content = cmake_utils_path.read_text(encoding='utf-8')
     
-    # Check if already patched
-    if "_discover_dependencies_batched" in content:
-        return True  # Already patched
-    
-    # Find the discover_dependencies function
-    import re
-    
-    # Pattern to match the problematic subprocess call
-    # Looking for: subprocess.check_output([..., "-tinputs"] + build_targets)
-    pattern = r'(def discover_dependencies\([^)]*\)[^:]*:\s*\n\s*""".*?"""\s*\n)?(\s*)(cmd\s*=\s*\[[^\]]*-tinputs[^\]]*\]\s*\+[^#\n]*)'
-    
-    match = re.search(pattern, content, re.DOTALL)
-    
-    if not match:
-        # Try alternative pattern
-        pattern2 = r'(\s+)(cmd\s*=\s*\[.*?-tinputs.*?\]\s*\+[^#\n]+)'
-        match = re.search(pattern2, content)
-    
-    if match:
-        indent = match.group(1) if match.lastindex else "    "
-        
-        # Create the replacement code
-        replacement = f'''{indent}# PATCHED: Use batched processing on Windows to avoid command line length limit
-{indent}import platform
-{indent}
-{indent}if platform.system() == "Windows" and len(build_targets) > 30:
-{indent}    return _discover_dependencies_batched(build_dir, build_targets)
-{indent}
-{indent}cmd = [NINJA_EXE if 'NINJA_EXE' in dir() else "ninja", "-C", build_dir, "-tinputs"] + build_targets
-'''
-        
-        # Apply the patch
-        new_content = content[:match.start()] + replacement + content[match.end():]
-        
-        # Add the batched function if not present
-        if "_discover_dependencies_batched" not in new_content:
-            batched_func = '''
-
-def _discover_dependencies_batched(build_dir: str, build_targets: list, batch_size: int = 30) -> tuple:
-    """Batched version to avoid Windows command line length limit."""
-    import subprocess
-    
-    all_dependencies = set()
-    all_object_files = []
-    ninja_exe = NINJA_EXE if 'NINJA_EXE' in dir() else "ninja"
-    
-    for i in range(0, len(build_targets), batch_size):
-        batch = build_targets[i:i + batch_size]
-        cmd = [ninja_exe, "-C", build_dir, "-tinputs"] + batch
-        
-        try:
-            inputs = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode("utf-8").splitlines()
-            for line in inputs:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    if line.endswith(".obj") or line.endswith(".o"):
-                        all_object_files.append(line)
-                    else:
-                        all_dependencies.add(line)
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: batch query failed: {e}")
-            continue
-    
-    return list(all_dependencies), all_object_files
-'''
-            # Insert before the last line
-            new_content = new_content.rstrip() + batched_func + "\n"
-        
-        # Write the patched file
-        cmake_utils_path.write_text(new_content, encoding='utf-8')
+    # Check if already patched (look for our smaller batch size)
+    if "BATCH_SIZE = 20  # Patched for Windows" in content:
+        print("  Already patched with smaller batch size")
         return True
     
+    import re
+    
+    # Pattern 1: Reduce BATCH_SIZE from 100 to 20
+    # The existing code has: BATCH_SIZE = 100
+    pattern1 = r'BATCH_SIZE\s*=\s*100'
+    if re.search(pattern1, content):
+        new_content = re.sub(pattern1, 'BATCH_SIZE = 20  # Patched for Windows', content)
+        cmake_utils_path.write_text(new_content, encoding='utf-8')
+        print("  Patched: Reduced BATCH_SIZE from 100 to 20")
+        return True
+    
+    # Pattern 2: Check if the function has add_next_batch_to_command
+    # If not, it might be an older version that needs full patch
+    if "add_next_batch_to_command" not in content:
+        # Old version - needs full patch
+        print("  Old cmake_utils.py detected, applying full patch...")
+        
+        # Look for the subprocess.check_output call with ninja -tinputs
+        pattern = r'(\s+)(cmd\s*=\s*\[.*?ninja.*?-tinputs.*?\])'
+        match = re.search(pattern, content, re.DOTALL)
+        
+        if match:
+            indent = match.group(1)
+            # Wrap in batched call
+            replacement = f'''{indent}# PATCHED: Use batched processing on Windows
+{indent}import platform
+{indent}if platform.system() == "Windows":
+{indent}    cmd, _ = add_next_batch_to_command([ninja, "-C", build_dir, "-tinputs"], worklist)
+{indent}else:
+{indent}    cmd = [ninja, "-C", build_dir, "-tinputs"] + list(worklist)
+'''
+            new_content = content[:match.start()] + replacement + content[match.end():]
+            cmake_utils_path.write_text(new_content, encoding='utf-8')
+            return True
+    
+    print("  WARNING: Could not apply patch - pattern not found")
     return False
 
 
@@ -535,12 +503,12 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
                     print(f"  Patch already applied: {patch_file.name}")
     
     # Patch Dawn's cmake_utils.py to fix Windows command line length limit
-    # Dawn source code is in third_party/externals/dawn (synced by git-sync-deps)
-    # The cmake_utils.py is accessed from third_party/dawn during build (may be symlink)
-    # We need to patch the actual source file in externals/dawn
+    # Dawn build scripts (cmake_utils.py, build_dawn.py) are in third_party/dawn/
+    # Dawn source code is in third_party/externals/dawn/
+    # We need to patch cmake_utils.py in the build scripts directory
     dawn_dirs = [
-        skia_dir / "third_party" / "externals" / "dawn",  # Dawn source code (actual location)
-        skia_dir / "third_party" / "dawn",                # GN build scripts (may be symlink)
+        skia_dir / "third_party" / "dawn",                # Build scripts (contains cmake_utils.py)
+        skia_dir / "third_party" / "externals" / "dawn",  # Source code (fallback)
     ]
     patched = False
     for dawn_dir in dawn_dirs:
@@ -552,21 +520,9 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
                 print(f"  Patched: Dawn cmake_utils.py at {dawn_dir.relative_to(skia_dir)} (Windows cmd length fix)")
                 patched = True
                 break
-        else:
-            # Check if directory exists at all
-            if dawn_dir.exists():
-                print(f"  Directory exists but cmake_utils.py not found: {dawn_dir}")
-                # List contents to debug
-                try:
-                    contents = list(dawn_dir.iterdir())[:10]
-                    print(f"  Directory contents (first 10): {[f.name for f in contents]}")
-                except:
-                    pass
-            else:
-                print(f"  Directory does not exist: {dawn_dir}")
     
     if not patched:
-        print("  WARNING: Dawn cmake_utils.py not found, will attempt patch during Dawn build if needed")
+        print("  WARNING: Dawn cmake_utils.py not found, skipping patch")
     
     # Setup environment
     env = os.environ.copy()
