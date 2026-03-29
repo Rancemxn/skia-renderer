@@ -535,10 +535,24 @@ def build_skia(skia_dir: Path, build_type: str, llvm_path: str,
                     print(f"  Patch already applied: {patch_file.name}")
     
     # Patch Dawn's cmake_utils.py to fix Windows command line length limit
-    dawn_dir = skia_dir / "third_party" / "dawn"
-    if dawn_dir.exists():
-        if patch_dawn_cmake_utils(dawn_dir):
-            print("  Patched: Dawn cmake_utils.py (Windows cmd length fix)")
+    # Dawn build scripts are in third_party/dawn (GN build scripts)
+    # Dawn source code is in third_party/externals/dawn
+    # The cmake_utils.py that needs patching is in the build scripts directory
+    dawn_dirs = [
+        skia_dir / "third_party" / "dawn",           # GN build scripts (contains cmake_utils.py)
+        skia_dir / "third_party" / "externals" / "dawn",  # Source code (fallback)
+    ]
+    patched = False
+    for dawn_dir in dawn_dirs:
+        if dawn_dir.exists():
+            cmake_utils = dawn_dir / "cmake_utils.py"
+            if cmake_utils.exists():
+                if patch_dawn_cmake_utils(dawn_dir):
+                    print(f"  Patched: Dawn cmake_utils.py at {dawn_dir.relative_to(skia_dir)} (Windows cmd length fix)")
+                    patched = True
+                    break
+    if not patched:
+        print("  WARNING: Dawn cmake_utils.py not found, skipping patch")
     
     # Setup environment
     env = os.environ.copy()
