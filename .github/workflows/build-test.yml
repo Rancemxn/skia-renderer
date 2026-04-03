@@ -192,25 +192,25 @@ jobs:
         run: python -u sync.py --headers-only
 
       - name: Download SDL3 artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sdl3-${{ inputs.build_type || 'Release' }}
           path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
 
       - name: Download vk-bootstrap artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vkbootstrap-${{ inputs.build_type || 'Release' }}
           path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
 
       - name: Download ANGLE artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: angle-${{ inputs.build_type || 'Release' }}
           path: deps/angle/out/${{ inputs.build_type || 'Release' }}
 
       - name: Download Skia artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: skia-${{ inputs.build_type || 'Release' }}
           path: deps/skia/out/${{ inputs.build_type || 'Release' }}
