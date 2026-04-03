@@ -29,11 +29,18 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
+      - name: Configure sccache server startup timeout
+        run: |
+          $configDir = "$env:APPDATA\Mozilla\sccache\config"
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
+          Write-Host "sccache config created at $configDir\config"
+
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "20"
-      
+
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@033219e2d69dd4d3e873e217eb385fdd4b4438f4
 
@@ -63,6 +70,13 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure sccache server startup timeout
+        run: |
+          $configDir = "$env:APPDATA\Mozilla\sccache\config"
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
+          Write-Host "sccache config created at $configDir\config"
 
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
@@ -98,6 +112,13 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure sccache server startup timeout
+        run: |
+          $configDir = "$env:APPDATA\Mozilla\sccache\config"
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
+          Write-Host "sccache config created at $configDir\config"
 
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
@@ -135,6 +156,13 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure sccache server startup timeout
+        run: |
+          $configDir = "$env:APPDATA\Mozilla\sccache\config"
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
+          Write-Host "sccache config created at $configDir\config"
 
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
@@ -175,6 +203,13 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure sccache server startup timeout
+        run: |
+          $configDir = "$env:APPDATA\Mozilla\sccache\config"
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
+          Write-Host "sccache config created at $configDir\config"
 
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
