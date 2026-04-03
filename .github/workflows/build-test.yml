@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: sdl3-${{ inputs.build_type || 'Release' }}
-          path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
+          path: deps/SDL3/
           retention-days: 1
 
   build-vkbootstrap:
@@ -101,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: vkbootstrap-${{ inputs.build_type || 'Release' }}
-          path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
+          path: deps/vk-bootstrap/
           retention-days: 1
 
   build-angle:
@@ -144,8 +144,7 @@ jobs:
         with:
           name: angle-${{ inputs.build_type || 'Release' }}
           path: |
-            deps/angle/out/${{ inputs.build_type || 'Release' }}
-            !deps/angle/out/${{ inputs.build_type || 'Release' }}/**/*.obj
+            deps/angle/
           retention-days: 1
 
   build-skia:
@@ -188,10 +187,7 @@ jobs:
         with:
           name: skia-${{ inputs.build_type || 'Release' }}
           path: |
-            deps/skia/out/${{ inputs.build_type || 'Release' }}
-            deps/skia/include
-            !deps/skia/out/${{ inputs.build_type || 'Release' }}/**/*.obj
-            !deps/skia/out/${{ inputs.build_type || 'Release' }}/**/*.pdb
+            deps/skia/
           retention-days: 1
 
   build-main:
@@ -224,26 +220,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Sync dependencies (headers only)
-        run: python -u sync.py --headers-only
-
       - name: Download SDL3 artifact
         uses: actions/download-artifact@v8
         with:
           name: sdl3-${{ inputs.build_type || 'Release' }}
-          path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
+          path: deps/SDL3/
 
       - name: Download vk-bootstrap artifact
         uses: actions/download-artifact@v8
         with:
           name: vkbootstrap-${{ inputs.build_type || 'Release' }}
-          path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
+          path: deps/vk-bootstrap/
 
       - name: Download ANGLE artifact
         uses: actions/download-artifact@v8
         with:
           name: angle-${{ inputs.build_type || 'Release' }}
-          path: deps/angle/out/${{ inputs.build_type || 'Release' }}
+          path: deps/angle/
 
       - name: Download Skia artifact
         uses: actions/download-artifact@v8
@@ -259,38 +252,52 @@ jobs:
 
       - name: Package artifact
         id: package
+        shell: powershell
         run: |
           $version = Get-Content VERSION
           $buildType = "${{ inputs.build_type || 'Release' }}"
           $zipName = "skia-renderer-v$version-windows-x64-$buildType.zip"
+          $pkgDir = "package"
+          
+          if (Test-Path $pkgDir) { Remove-Item -Recurse -Force $pkgDir }
+          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
 
-          # Create package directory
-          New-Item -ItemType Directory -Force -Path package
+          $dllSourceDirs = @(
+            "deps/SDL3/out/$buildType",
+            "deps/angle/out/$buildType"
+          )
 
-          # Copy executable
-          Copy-Item build/$buildType/skia-renderer.exe package/
+          $exeSource = "build/$buildType/skia-renderer.exe"
+          if (Test-Path $exeSource) {
+            Copy-Item $exeSource -Destination $pkgDir/
+          } else {
+            Write-Error "Executable not found at $exeSource"
+            exit 1
+          }
 
-          # Copy DLLs
-          Copy-Item deps/SDL3/out/$buildType/SDL3.dll package/
-          Copy-Item deps/angle/out/$buildType/libEGL.dll package/
-          Copy-Item deps/angle/out/$buildType/libGLESv2.dll package/
+          foreach ($dir in $dllSourceDirs) {
+            if (Test-Path $dir) {
+              Write-Host "Collecting DLLs from $dir..."
+              Get-ChildItem -Path $dir -Filter "*.dll" | Copy-Item -Destination $pkgDir/ -Force
+            } else {
+              Write-Warning "Dependency directory not found: $dir"
+            }
+          }
 
-          # Create zip
-          Compress-Archive -Path package/* -DestinationPath $zipName
+          if ((Get-ChildItem $pkgDir).Count -eq 0) {
+            Write-Error "Packaging failed: Package directory is empty."
+            exit 1
+          }
 
-          # Calculate hash
+          Compress-Archive -Path "$pkgDir/*" -DestinationPath $zipName
           $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
-
-          # Get file size
-          $size = (Get-Item $zipName).Length / 1MB
+          $size = [math]::Round((Get-Item $zipName).Length / 1MB, 2)
 
           echo "artifact_name=$zipName" >> $env:GITHUB_OUTPUT
           echo "artifact_hash=$hash" >> $env:GITHUB_OUTPUT
-          echo "artifact_size=$([math]::Round($size, 2))" >> $env:GITHUB_OUTPUT
+          echo "artifact_size=$size" >> $env:GITHUB_OUTPUT
 
-          Write-Host "Package created: $zipName"
-          Write-Host "Size: $([math]::Round($size, 2)) MB"
-          Write-Host "SHA256: $hash"
+          Write-Host "Package created: $zipName ($size MB)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
