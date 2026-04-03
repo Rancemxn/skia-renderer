@@ -161,6 +161,7 @@ jobs:
           name: skia-${{ inputs.build_type || 'Release' }}
           path: |
             deps/skia/out/${{ inputs.build_type || 'Release' }}
+            deps/skia/include
             !deps/skia/out/${{ inputs.build_type || 'Release' }}/**/*.obj
             !deps/skia/out/${{ inputs.build_type || 'Release' }}/**/*.pdb
           retention-days: 1
@@ -213,7 +214,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: skia-${{ inputs.build_type || 'Release' }}
-          path: deps/skia/out/${{ inputs.build_type || 'Release' }}
+          path: deps/skia
 
       - name: Build main project
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-deps
