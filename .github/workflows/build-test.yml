@@ -49,7 +49,7 @@ jobs:
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-vkbootstrap --skip-angle --skip-skia --skip-main
 
       - name: Upload SDL3 artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sdl3-${{ inputs.build_type || 'Release' }}
           path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
@@ -84,7 +84,7 @@ jobs:
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-sdl --skip-angle --skip-skia --skip-main
 
       - name: Upload vk-bootstrap artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: vkbootstrap-${{ inputs.build_type || 'Release' }}
           path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
@@ -119,7 +119,7 @@ jobs:
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-sdl --skip-vkbootstrap --skip-skia --skip-main
 
       - name: Upload ANGLE artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: angle-${{ inputs.build_type || 'Release' }}
           path: |
@@ -156,7 +156,7 @@ jobs:
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-sdl --skip-vkbootstrap --skip-angle --skip-main
 
       - name: Upload Skia artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: skia-${{ inputs.build_type || 'Release' }}
           path: |
@@ -257,7 +257,7 @@ jobs:
           Write-Host "SHA256: $hash"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-${{ inputs.build_type || 'Release' }}
           path: ${{ steps.package.outputs.artifact_name }}
