@@ -128,11 +128,10 @@ jobs:
           retention-days: 1
 
   # ========================================
-  # Job 4: Build Skia (depends on ANGLE)
+  # Job 4: Build Skia (Parallel with ANGLE)
   # ========================================
   build-skia:
     runs-on: windows-latest
-    needs: [build-angle]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -159,12 +158,6 @@ jobs:
       - name: Sync Skia
         run: python -u sync.py --skia
 
-      - name: Download ANGLE artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: angle-${{ inputs.build_type || 'Release' }}
-          path: deps/angle/out/${{ inputs.build_type || 'Release' }}
-
       - name: Build Skia
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-sdl --skip-vkbootstrap --skip-angle --skip-main
 
@@ -183,7 +176,7 @@ jobs:
   # ========================================
   build-main:
     runs-on: windows-latest
-    needs: [build-sdl3, build-vkbootstrap, build-skia]
+    needs: [build-sdl3, build-vkbootstrap, build-angle, build-skia]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
