@@ -24,7 +24,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -59,7 +59,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -94,7 +94,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -131,7 +131,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -170,7 +170,7 @@ jobs:
     needs: [build-sdl3, build-vkbootstrap, build-angle, build-skia]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
