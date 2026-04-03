@@ -6,7 +6,7 @@ on:
       - develop
     paths-ignore:
       - 'VERSION'
-      - '.github/workflows/**'
+
   workflow_dispatch:
     inputs:
       bump_major:
