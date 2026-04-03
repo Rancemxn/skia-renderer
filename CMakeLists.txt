@@ -843,7 +843,15 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif()
 endif()
 
-if(MSVC)
+# Note: Check USING_CLANG_CL first because MSVC is also TRUE for clang-cl
+if(USING_CLANG_CL)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        /W4 /utf-8 /GR /EHsc
+        $<$<CONFIG:Release>:/O2>
+        $<$<CONFIG:Debug>:/Od /Zi>
+    )
+    # Note: /GL (LTCG) is not supported by clang-cl, only by MSVC
+elseif(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE
         /W4 /utf-8 /GR /EHsc
         $<$<CONFIG:Release>:/O2 /GL>
@@ -852,12 +860,6 @@ if(MSVC)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         target_link_options(${PROJECT_NAME} PRIVATE /LTCG)
     endif()
-elseif(USING_CLANG_CL)
-    target_compile_options(${PROJECT_NAME} PRIVATE
-        /W4 /utf-8 /GR /EHsc
-        $<$<CONFIG:Release>:/O2>
-        $<$<CONFIG:Debug>:/Od /Zi>
-    )
 elseif(USING_CLANG_GNU)
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wpedantic -frtti -fexceptions
