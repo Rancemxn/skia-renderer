@@ -20,9 +20,6 @@ env:
   SCCACHE_GHA_ENABLED: true
 
 jobs:
-  # ========================================
-  # Job 1: Build SDL3 (Parallel)
-  # ========================================
   build-sdl3:
     runs-on: windows-latest
     steps:
@@ -32,10 +29,13 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install LLVM and Clang 20
+      - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "20"
+      
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -55,9 +55,6 @@ jobs:
           path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
           retention-days: 1
 
-  # ========================================
-  # Job 2: Build vk-bootstrap (Parallel)
-  # ========================================
   build-vkbootstrap:
     runs-on: windows-latest
     steps:
@@ -67,16 +64,13 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install LLVM and Clang 20
+      - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "20"
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
-        with:
-          version: 1.4.309.0
-          cache: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -96,9 +90,6 @@ jobs:
           path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
           retention-days: 1
 
-  # ========================================
-  # Job 3: Build ANGLE (Parallel)
-  # ========================================
   build-angle:
     runs-on: windows-latest
     steps:
@@ -108,10 +99,13 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install LLVM and Clang 20
+      - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "20"
+      
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -133,9 +127,6 @@ jobs:
             !deps/angle/out/${{ inputs.build_type || 'Release' }}/**/*.obj
           retention-days: 1
 
-  # ========================================
-  # Job 4: Build Skia (Parallel with ANGLE)
-  # ========================================
   build-skia:
     runs-on: windows-latest
     steps:
@@ -145,16 +136,13 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install LLVM and Clang 20
+      - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "20"
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
-        with:
-          version: 1.4.309.0
-          cache: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -177,9 +165,6 @@ jobs:
             !deps/skia/out/${{ inputs.build_type || 'Release' }}/**/*.pdb
           retention-days: 1
 
-  # ========================================
-  # Job 5: Build Main Project (depends on all)
-  # ========================================
   build-main:
     runs-on: windows-latest
     needs: [build-sdl3, build-vkbootstrap, build-angle, build-skia]
@@ -190,16 +175,13 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Install LLVM and Clang 20
+      - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "20"
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.2
-        with:
-          version: 1.4.309.0
-          cache: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
