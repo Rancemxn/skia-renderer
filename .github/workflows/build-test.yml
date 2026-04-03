@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: sdl3-${{ inputs.build_type || 'Release' }}
-          path: deps/SDL3/
+          path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
           retention-days: 1
 
   build-vkbootstrap:
@@ -101,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: vkbootstrap-${{ inputs.build_type || 'Release' }}
-          path: deps/vk-bootstrap/
+          path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
           retention-days: 1
 
   build-angle:
@@ -144,7 +144,7 @@ jobs:
         with:
           name: angle-${{ inputs.build_type || 'Release' }}
           path: |
-            deps/angle/
+            deps/angle/out/${{ inputs.build_type || 'Release' }}
           retention-days: 1
 
   build-skia:
@@ -187,7 +187,7 @@ jobs:
         with:
           name: skia-${{ inputs.build_type || 'Release' }}
           path: |
-            deps/skia/
+            deps/skia/out/${{ inputs.build_type || 'Release' }}
           retention-days: 1
 
   build-main:
@@ -219,30 +219,33 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      
+      - name: Sync dependencies
+        run: python -u sync.py
 
       - name: Download SDL3 artifact
         uses: actions/download-artifact@v8
         with:
           name: sdl3-${{ inputs.build_type || 'Release' }}
-          path: deps/SDL3/
+          path: deps/SDL3/out/${{ inputs.build_type || 'Release' }}
 
       - name: Download vk-bootstrap artifact
         uses: actions/download-artifact@v8
         with:
           name: vkbootstrap-${{ inputs.build_type || 'Release' }}
-          path: deps/vk-bootstrap/
+          path: deps/vk-bootstrap/out/${{ inputs.build_type || 'Release' }}
 
       - name: Download ANGLE artifact
         uses: actions/download-artifact@v8
         with:
           name: angle-${{ inputs.build_type || 'Release' }}
-          path: deps/angle/
+          path: deps/angle/out/${{ inputs.build_type || 'Release' }}
 
       - name: Download Skia artifact
         uses: actions/download-artifact@v8
         with:
           name: skia-${{ inputs.build_type || 'Release' }}
-          path: deps/skia
+          path: deps/skia/out/${{ inputs.build_type || 'Release' }}
 
       - name: Build main project
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-deps
