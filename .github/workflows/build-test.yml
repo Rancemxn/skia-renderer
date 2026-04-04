@@ -250,9 +250,6 @@ jobs:
       - name: Build main project
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-deps
 
-      - name: Show sccache stats
-        run: $env:SCCACHE_PATH --show-stats
-
       - name: Package artifact
         id: package
         shell: powershell
@@ -260,47 +257,35 @@ jobs:
           $version = Get-Content VERSION
           $buildType = "${{ inputs.build_type || 'Release' }}"
           $zipName = "skia-renderer-v$version-windows-x64-$buildType.zip"
+          $sourceDir = "build/$buildType"
           $pkgDir = "package"
           
-          if (Test-Path $pkgDir) { Remove-Item -Recurse -Force $pkgDir }
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
 
-          $dllSourceDirs = @(
-            "deps/SDL3/out/$buildType",
-            "deps/angle/out/$buildType"
-          )
-
-          $exeSource = "build/$buildType/skia-renderer.exe"
-          if (Test-Path $exeSource) {
-            Copy-Item $exeSource -Destination $pkgDir/
-          } else {
-            Write-Error "Executable not found at $exeSource"
+          $files = Get-ChildItem -Path $sourceDir -Include *.exe, *.dll -File
+          
+          if ($files.Count -eq 0) {
+            Write-Error "No .exe or .dll files found in $sourceDir"
             exit 1
           }
 
-          foreach ($dir in $dllSourceDirs) {
-            if (Test-Path $dir) {
-              Write-Host "Collecting DLLs from $dir..."
-              Get-ChildItem -Path $dir -Filter "*.dll" | Copy-Item -Destination $pkgDir/ -Force
-            } else {
-              Write-Warning "Dependency directory not found: $dir"
-            }
+          foreach ($file in $files) {
+            Write-Host "Copying $($file.Name)..."
+            Copy-Item $file.FullName -Destination $pkgDir/
           }
 
-          if ((Get-ChildItem $pkgDir).Count -eq 0) {
-            Write-Error "Packaging failed: Package directory is empty."
+          if (-not (Test-Path "$pkgDir/skia-renderer.exe")) {
+            Write-Error "skia-renderer.exe missing from package!"
             exit 1
           }
 
           Compress-Archive -Path "$pkgDir/*" -DestinationPath $zipName
+          
           $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
           $size = [math]::Round((Get-Item $zipName).Length / 1MB, 2)
-
           echo "artifact_name=$zipName" >> $env:GITHUB_OUTPUT
           echo "artifact_hash=$hash" >> $env:GITHUB_OUTPUT
           echo "artifact_size=$size" >> $env:GITHUB_OUTPUT
-
-          Write-Host "Package created: $zipName ($size MB)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
