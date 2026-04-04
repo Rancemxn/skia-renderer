@@ -240,67 +240,9 @@ jobs:
       - name: Build main project
         run: python -u build.py --build-type ${{ inputs.build_type || 'Release' }} --skip-deps
 
-      - name: Package artifact
-        id: package
-        shell: powershell
-        run: |
-          $version = Get-Content VERSION
-          $buildType = "${{ inputs.build_type || 'Release' }}"
-          $zipName = "skia-renderer-v$version-windows-x64-$buildType.zip"
-          $sourceDir = "build/$buildType"
-          $pkgDir = "package"
-          
-          Write-Host "Source directory: $sourceDir"
-          
-          if (-not (Test-Path $sourceDir)) {
-            Write-Error "Build directory not found: $sourceDir"
-            exit 1
-          }
-
-          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
-
-          $allFiles = Get-ChildItem -Path $sourceDir -File
-          $files = $allFiles | Where-Object { $_.Extension -in ".exe", ".dll" }
-          
-          if ($files.Count -eq 0) {
-            Write-Host "Files found in $sourceDir:"
-            $allFiles | ForEach-Object { Write-Host " - $($_.Name)" }
-            Write-Error "No .exe or .dll files found in $sourceDir"
-            exit 1
-          }
-
-          foreach ($file in $files) {
-            Write-Host "Copying $($file.Name)..."
-            Copy-Item $file.FullName -Destination $pkgDir/
-          }
-
-          if (-not (Test-Path "$pkgDir/skia-renderer.exe")) {
-            Write-Error "skia-renderer.exe missing from package!"
-            exit 1
-          }
-
-          Compress-Archive -Path "$pkgDir/*" -DestinationPath $zipName
-          
-          $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash
-          $size = [math]::Round((Get-Item $zipName).Length / 1MB, 2)
-          echo "artifact_name=$zipName" >> $env:GITHUB_OUTPUT
-          echo "artifact_hash=$hash" >> $env:GITHUB_OUTPUT
-          echo "artifact_size=$size" >> $env:GITHUB_OUTPUT
-          
-          Write-Host "Successfully packaged: $zipName"
-
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: windows-${{ inputs.build_type || 'Release' }}
-          path: ${{ steps.package.outputs.artifact_name }}
+          path: build\Release
           retention-days: 7
-
-      - name: Summary
-        run: |
-          echo "### Build Test Summary" >> $env:GITHUB_STEP_SUMMARY
-          echo "" >> $env:GITHUB_STEP_SUMMARY
-          echo "- **Build Type**: `${{ inputs.build_type || 'Release' }}`" >> $env:GITHUB_STEP_SUMMARY
-          echo "- **Artifact**: `${{ steps.package.outputs.artifact_name }}`" >> $env:GITHUB_STEP_SUMMARY
-          echo "- **Size**: `${{ steps.package.outputs.artifact_size }} MB`" >> $env:GITHUB_STEP_SUMMARY
-          echo "- **SHA256**: `${{ steps.package.outputs.artifact_hash }}`" >> $env:GITHUB_STEP_SUMMARY
