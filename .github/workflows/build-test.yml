@@ -36,10 +36,8 @@ jobs:
           Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
           Write-Host "sccache config created at $configDir\config"
 
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "20"
+      - name: Install LLVM
+        uses: egor-tensin/setup-clang@v2
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@033219e2d69dd4d3e873e217eb385fdd4b4438f4
@@ -78,10 +76,8 @@ jobs:
           Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
           Write-Host "sccache config created at $configDir\config"
 
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "20"
+      - name: Install LLVM
+        uses: egor-tensin/setup-clang@v2
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@033219e2d69dd4d3e873e217eb385fdd4b4438f4
@@ -120,10 +116,8 @@ jobs:
           Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
           Write-Host "sccache config created at $configDir\config"
 
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "20"
+      - name: Install LLVM
+        uses: egor-tensin/setup-clang@v2
       
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@033219e2d69dd4d3e873e217eb385fdd4b4438f4
@@ -163,10 +157,8 @@ jobs:
           Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
           Write-Host "sccache config created at $configDir\config"
 
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "20"
+      - name: Install LLVM
+        uses: egor-tensin/setup-clang@v2
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@033219e2d69dd4d3e873e217eb385fdd4b4438f4
@@ -207,10 +199,8 @@ jobs:
           Set-Content -Path "$configDir\config" -Value "server_startup_timeout_ms = 30000"
           Write-Host "sccache config created at $configDir\config"
 
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "20"
+      - name: Install LLVM
+        uses: egor-tensin/setup-clang@v2
 
       - name: Install Vulkan SDK
         uses: humbletim/install-vulkan-sdk@033219e2d69dd4d3e873e217eb385fdd4b4438f4
@@ -260,11 +250,21 @@ jobs:
           $sourceDir = "build/$buildType"
           $pkgDir = "package"
           
+          Write-Host "Source directory: $sourceDir"
+          
+          if (-not (Test-Path $sourceDir)) {
+            Write-Error "Build directory not found: $sourceDir"
+            exit 1
+          }
+
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
 
-          $files = Get-ChildItem -Path $sourceDir -Include *.exe, *.dll -File
+          $allFiles = Get-ChildItem -Path $sourceDir -File
+          $files = $allFiles | Where-Object { $_.Extension -in ".exe", ".dll" }
           
           if ($files.Count -eq 0) {
+            Write-Host "Files found in $sourceDir:"
+            $allFiles | ForEach-Object { Write-Host " - $($_.Name)" }
             Write-Error "No .exe or .dll files found in $sourceDir"
             exit 1
           }
@@ -286,6 +286,8 @@ jobs:
           echo "artifact_name=$zipName" >> $env:GITHUB_OUTPUT
           echo "artifact_hash=$hash" >> $env:GITHUB_OUTPUT
           echo "artifact_size=$size" >> $env:GITHUB_OUTPUT
+          
+          Write-Host "Successfully packaged: $zipName"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
