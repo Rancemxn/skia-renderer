@@ -646,6 +646,8 @@ def check_sdl3_built(sdl3_out_dir: Path) -> tuple:
     
     return False, None
 
+
+
 def build_main_project(script_dir: Path, build_type: str,
                        clang: str, clang_pp: str, sccache: str = None,
                        vulkan_sdk: str = None, clean: bool = False,
@@ -766,29 +768,51 @@ def build_main_project(script_dir: Path, build_type: str,
         build_cmd.append("--")
         build_cmd.append("-v")
     run_cmd(build_cmd)
+
     
-    # Copy ANGLE DLLs to build directory
     if platform.system() == "Windows":
-        angle_out_dir = deps_dir / "angle" / "out" / build_type
+        print("  Collecting dependency DLLs...")
         
-        # Find all DLL files in ANGLE output directory
-        angle_dlls = []
-        for dll in angle_out_dir.glob("*.dll"):
-            angle_dlls.append(dll.name)
+        search_dirs = [
+            deps_dir / "SDL3" / "out" / build_type,
+            deps_dir / "angle" / "out" / build_type,
+            deps_dir / "vk-bootstrap" / "out" / build_type,
+            deps_dir / "skia" / "out" / build_type,
+        ]
         
-        if angle_dlls:
-            print(f"  Copying ANGLE DLLs ({len(angle_dlls)} files):")
-            for dll_name in sorted(angle_dlls):
-                src = angle_out_dir / dll_name
-                dst = build_dir / dll_name
-                if dst.exists():
-                    dst.unlink()
-                shutil.copy2(str(src), str(dst))
-                print(f"    {dll_name}")
+        blacklist = ["vulkan-1.dll", "vulkan.dll", "vk_swiftshader.dll"]
+
+        found_dlls = set()
+        for s_dir in search_dirs:
+            if not s_dir.exists():
+                continue
+            
+            for dll_path in s_dir.rglob("*.dll"):
+                if dll_path.name.lower() in blacklist:
+                    continue
+                if any(part in dll_path.parts for part in ["obj", "gen", "args"]):
+                    continue
+                target_path = build_dir / dll_path.name
+                
+                try:
+                    if target_path.exists():
+                        try:
+                            os.chmod(target_path, stat.S_IWRITE)
+                            target_path.unlink()
+                        except:
+                            pass
+                    shutil.copy2(str(dll_path), str(target_path))
+                    found_dlls.add(dll_path.name)
+                    if verbose:
+                        print(f"    Copied: {dll_path.name} from {dll_path.parent.relative_to(deps_dir)}")
+                except Exception as e:
+                    print(f"    WARNING: Failed to copy {dll_path.name}: {e}")
+
+        if found_dlls:
+            print(f"  Successfully collected {len(found_dlls)} DLLs.")
         else:
-            print("  WARNING: No ANGLE DLLs found")
+            print("  No DLLs found in dependency folders.")
     
-    # Report output
     exe_name = "skia-renderer.exe" if platform.system() == "Windows" else "skia-renderer"
     exe_path = build_dir / exe_name
     if exe_path.exists():
